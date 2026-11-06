@@ -274,7 +274,7 @@ class MerchantIconTest {
             }
             store.close();LegacyLedgerSchemaFixture.project(app.getDatabasePath(name).path,3)
             store = LedgerStore(app, name)
-            assertEquals(10, store.readableDatabase.version)
+            assertEquals(14, store.readableDatabase.version)
             assertEquals(saved, store.get(saved.id)); assertArrayEquals(image, store.screenshot(saved.id))
             assertTrue(store.merchantIconIds().isEmpty())
         } finally { store.close(); app.deleteDatabase(name); bitmap.recycle() }
@@ -302,7 +302,7 @@ class MerchantIconTest {
             }
             store.close();LegacyLedgerSchemaFixture.project(app.getDatabasePath(name).path,4)
             store = LedgerStore(app, name)
-            assertEquals(10, store.readableDatabase.version)
+            assertEquals(14, store.readableDatabase.version)
             assertEquals(first, store.get(first.id)); assertEquals(second, store.get(second.id))
             assertArrayEquals(store.merchantIcon(first.id), store.merchantIcon(second.id))
             assertNotNull(MerchantIconEncoding.mime(store.merchantIcon(first.id)!!))

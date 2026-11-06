@@ -19,7 +19,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PermissionTrimTest {
-    @Test fun recognitionNeedsNoNotificationsOrOverlayPermission() {
+    @Test fun recognitionNeedsNoForegroundServiceOrOverlayPermission() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val automation=instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
         val app=ApplicationProvider.getApplicationContext<LedgerApp>()
@@ -75,7 +75,10 @@ class PermissionTrimTest {
                 assertEquals("ledger-shake-sensor",sensor.getString("deliveryThread"))
                 automation.executeShellCommand("appops set ${app.packageName} SYSTEM_ALERT_WINDOW deny").use { java.io.FileInputStream(it.fileDescriptor).readBytes() }
                 val service=ScreenCaptureService.current!!
-                service.showQueuedFeedback("正在识别…",true,null)
+                instrumentation.runOnMainSync { service.showQueuedFeedback("正在识别…",true,null) }
+                instrumentation.waitForIdleSync()
+                assertFalse("Recognition progress must not attach the retired overlay",service.paymentDiagnostics().getJSONObject("feedback").optBoolean("attached"))
+                instrumentation.runOnMainSync { service.showReadinessFeedback("请检查页面识别授权") }
                 waitFor { service.paymentDiagnostics().getJSONObject("feedback").optBoolean("attached") }
                 assertFalse(Settings.canDrawOverlays(app))
                 assertEquals(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,service.paymentDiagnostics().getJSONObject("feedback").getInt("windowType"))
