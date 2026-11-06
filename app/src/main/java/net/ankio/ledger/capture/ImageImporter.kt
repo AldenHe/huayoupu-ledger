@@ -2,14 +2,11 @@ package net.ankio.ledger.capture
 
 import android.net.Uri
 import android.graphics.ImageDecoder
-import android.graphics.Bitmap
-import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import net.ankio.ledger.LedgerApp
-import net.ankio.ledger.core.Capture
 import net.ankio.ledger.core.Source
 import net.ankio.ledger.data.IngestResult
 import net.ankio.ledger.ocr.RecognitionException
@@ -51,14 +48,13 @@ class ImageImporter(private val app: LedgerApp, private val client: net.ankio.le
                     if (longest > 1800) decoder.setTargetSize(maxOf(1, info.size.width * 1800 / longest), maxOf(1, info.size.height * 1800 / longest))
                     decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                 }
-                try {
-                    previewBytes = ByteArrayOutputStream().use { output ->
-                        preview.compress(Bitmap.CompressFormat.PNG, 100, output); output.toByteArray()
-                    }
-                    app.changed()
-                    val result = CaptureProcessor(app, client).process(preview, Source.IMAGE, "image",taskId) { generation == token && app.recognitionSession.generation == recognitionGeneration }
-                    if (generation == token) state.value = ImageImportState.Finished(result)
-                } finally { preview.recycle() }
+                val image = try { client.prepareScreenshot(preview) } finally { preview.recycle() }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (generation != token || app.recognitionSession.generation != recognitionGeneration) throw CancellationException("识别已停止")
+                previewBytes = image
+                app.changed()
+                val result = CaptureProcessor(app, client).processPrepared(image, Source.IMAGE, "image",taskId) { generation == token && app.recognitionSession.generation == recognitionGeneration }
+                if (generation == token) state.value = ImageImportState.Finished(result)
             } catch (cancelled: CancellationException) { app.tasks.update(taskId,"CANCELLED","识别已停止，可以重新导入截图");app.changed();throw cancelled }
             catch (error: Exception) {
                 val message=(error as? RecognitionException)?.userMessage ?: "识别失败，请换一张清晰截图重试"

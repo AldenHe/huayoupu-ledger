@@ -46,8 +46,8 @@ internal class WebUiProbe(private val scenario: ActivityScenario<MainActivity>) 
 
     fun text(expression: String): String = JSONArray("[${value(expression)}]").getString(0)
 
-    fun await(condition: String) {
-        val deadline = SystemClock.elapsedRealtime() + 10_000
+    fun await(condition: String, timeoutMs:Long=10_000) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
         var last = ""
         do {
             last = value("Boolean($condition)", deadline - SystemClock.elapsedRealtime())

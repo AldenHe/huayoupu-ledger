@@ -84,6 +84,13 @@ internal class PaymentPageMonitor(private val service:ScreenCaptureService,priva
             }
         }
         if(!service.ledger.channels.autoAllowed(pkg))return
+        if(event.eventType==AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val activity=activities[event.windowId].orEmpty()
+            // Chat/home content changes cannot become a payment result without
+            // an activity/window transition. Keep those transition events for
+            // first-result readiness and owner-verified visit resets.
+            if(PaymentVisits.isNavigation(pkg,activity) || !PaymentPageDetector.eligibleActivity(pkg,activity))return
+        }
         selectedEvents++
         lastEventAt=SystemClock.elapsedRealtime()
         schedule()

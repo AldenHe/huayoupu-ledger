@@ -47,8 +47,8 @@ jobs:
           set -euo pipefail
           commit=$(git rev-parse HEAD)
           test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$commit"
-          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow android.yml --commit "$commit" --branch main --event push --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-          test -n "$run_id" || { echo 'Push this commit to main and run Android checks before publishing.'; exit 1; }
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow android.yml --commit "$commit" --branch master --event push --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          test -n "$run_id" || { echo 'Push this commit to master and run Android checks before publishing.'; exit 1; }
           gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
           gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name android-arm64 --dir release
           gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name checked-source --dir release
@@ -91,4 +91,5 @@ jobs:
           - 同时提供 APK SHA-256 校验值、构建信息和对应的完整公开源码 ZIP。
           - 从本地调试版切换时，若提示签名不一致，请先在应用内导出备份，再卸载旧版、安装并恢复备份。
           EOF
+          cat .github/RELEASE_NOTES.md >> "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --latest --title "花有谱 ${RELEASE_TAG#v}" --notes-file "$RUNNER_TEMP/release-notes.md" release/*.apk release/*.sha256 release/Huayoupu-Ledger-source.zip release/build-info.json

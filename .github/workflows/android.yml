@@ -98,7 +98,7 @@ jobs:
           arch: x86_64
           profile: pixel_3a
           disable-animations: true
-          script: bash ./gradlew -PledgerAbi=x86_64 '-Pandroid.testInstrumentationRunnerArguments.class=net.ankio.ledger.LicenseDisclosureTest,net.ankio.ledger.ExecutionLogTest,net.ankio.ledger.ocr.LocalModeSettingsTest,net.ankio.ledger.data.LedgerCursorOptimizationTest,net.ankio.ledger.data.LedgerCandidateOptimizationTest,net.ankio.ledger.data.RecognitionRecoveryOptimizationTest,net.ankio.ledger.data.LedgerQuery056Test,net.ankio.ledger.data.AutomaticSupplementTest,net.ankio.ledger.data.RefundPersistenceTest,net.ankio.ledger.data.LedgerIdentity056Test,net.ankio.ledger.data.MerchantEnrichmentTest,net.ankio.ledger.data.LedgerUndo056Test,net.ankio.ledger.data.CaptureSupplementTest,net.ankio.ledger.PaymentRecognitionQueueTest,net.ankio.ledger.PaymentVisitsTest,net.ankio.ledger.BackgroundSettingsSyncTest,net.ankio.ledger.PermissionTrimTest,net.ankio.ledger.CaptureReadinessTest,net.ankio.ledger.CaptureRestoreTest,net.ankio.ledger.RecognitionBannerFallbackTest,net.ankio.ledger.SetupStepsTest,net.ankio.ledger.ocr.IconGeneralityTest,net.ankio.ledger.ocr.LocalHeaderIconTest,net.ankio.ledger.IconLocationRegressionTest,net.ankio.ledger.MerchantIconTest,net.ankio.ledger.ocr.LocalRecognitionClientTest' :app:connectedDebugAndroidTest --stacktrace
+          script: bash ./gradlew -PledgerAbi=x86_64 '-Pandroid.testInstrumentationRunnerArguments.class=net.ankio.ledger.LicenseDisclosureTest,net.ankio.ledger.ExecutionLogTest,net.ankio.ledger.ocr.LocalModeSettingsTest,net.ankio.ledger.data.LedgerCursorOptimizationTest,net.ankio.ledger.data.LedgerCandidateOptimizationTest,net.ankio.ledger.data.RecognitionRecoveryOptimizationTest,net.ankio.ledger.data.LedgerQuery056Test,net.ankio.ledger.data.AutomaticSupplementTest,net.ankio.ledger.data.RefundPersistenceTest,net.ankio.ledger.data.LedgerIdentity056Test,net.ankio.ledger.data.MerchantEnrichmentTest,net.ankio.ledger.data.LedgerUndo056Test,net.ankio.ledger.data.CaptureSupplementTest,net.ankio.ledger.PaymentRecognitionQueueTest,net.ankio.ledger.PaymentVisitsTest,net.ankio.ledger.BackgroundSettingsSyncTest,net.ankio.ledger.PermissionTrimTest,net.ankio.ledger.CaptureReadinessTest,net.ankio.ledger.CaptureRestoreTest,net.ankio.ledger.RecognitionBannerFallbackTest,net.ankio.ledger.SetupStepsTest,net.ankio.ledger.ocr.IconGeneralityTest,net.ankio.ledger.ocr.LocalHeaderIconTest,net.ankio.ledger.IconLocationRegressionTest,net.ankio.ledger.MerchantIconTest,net.ankio.ledger.ocr.LocalRecognitionClientTest,net.ankio.ledger.data.AccountPostingTest,net.ankio.ledger.data.ChannelDefaultAccountTest,net.ankio.ledger.data.MonthlyBudgetTest,net.ankio.ledger.data.ReimbursementTest,net.ankio.ledger.data.BillReportTest,net.ankio.ledger.data.ReportEvidenceTest,net.ankio.ledger.data.AccountNameTest,net.ankio.ledger.data.RefundBackupTest,net.ankio.ledger.AccountIdentityCurrencyUiTest,net.ankio.ledger.BillReportUiTest' :app:connectedDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -154,14 +154,14 @@ jobs:
               'versionCode': item['versionCode'], 'abi': 'arm64-v8a'
           }, indent=2) + '\n')
           PY
-      - name: Sign trusted main builds
-        if: github.repository == 'AldenHe/huayoupu-ledger' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Sign trusted master builds
+        if: github.repository == 'AldenHe/huayoupu-ledger' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
-          test -n "$ANDROID_KEYSTORE_BASE64" && test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo 'Configure the Android signing secrets before publishing main builds.'; exit 1; }
+          test -n "$ANDROID_KEYSTORE_BASE64" && test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo 'Configure the Android signing secrets before publishing master builds.'; exit 1; }
           umask 077
           keystore="$RUNNER_TEMP/huiming-release.p12"
           trap 'rm -f "$keystore" "$RUNNER_TEMP/huiming-aligned.apk"' EXIT

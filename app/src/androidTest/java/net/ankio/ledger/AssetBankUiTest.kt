@@ -13,10 +13,13 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AssetBankUiTest {
-    @Test fun blankNameUsesAccountKindAndMissingBalanceExplainsTheRequiredField() {
+    @Test fun blankNameAndMissingBalanceExplainTheirRequiredFields() {
         val app=ApplicationProvider.getApplicationContext<LedgerApp>();val before=app.store.accounts().map { it.id }.toSet()
         try { ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val ui=WebUiProbe(scenario);ui.ready();ui.run("go('assets');document.querySelector('#add-account').click();document.querySelector('#account-kind').value='wechat';document.querySelector('#account-kind').dispatchEvent(new Event('change'));document.querySelector('#account-name').value='';document.querySelector('#account-amount').value='';document.querySelector('#account-form').requestSubmit()")
+            ui.await("document.querySelector('#account-name').getAttribute('aria-invalid')==='true'")
+            assertEquals("请输入账户名称",ui.text("document.querySelector('#account-name-error').textContent"))
+            ui.run("document.querySelector('#account-name').value='微信';document.querySelector('#account-form').requestSubmit()")
             ui.await("document.querySelector('#account-amount').getAttribute('aria-invalid')==='true'")
             assertEquals("请输入余额，可填 0",ui.text("document.querySelector('#account-amount-error').textContent"))
             ui.run("document.querySelector('#account-amount').value='0';document.querySelector('#account-form').requestSubmit()")
@@ -24,7 +27,7 @@ class AssetBankUiTest {
             val saved=app.store.accounts().last { it.kind=="wechat" && it.amountCents==0L }
             assertEquals("微信",saved.name)
             for((kind,name) in listOf("bank_ccb" to "建设银行","custom" to "其他账户")) {
-                ui.run("editAccount();document.querySelector('#account-kind').value='${if(kind.startsWith("bank_"))"bank" else kind}';document.querySelector('#account-kind').dispatchEvent(new Event('change'));document.querySelector('#account-bank').value='$kind';document.querySelector('#account-name').value='';document.querySelector('#account-amount').value='-1';document.querySelector('#account-form').requestSubmit()")
+                ui.run("editAccount();document.querySelector('#account-kind').value='${if(kind.startsWith("bank_"))"bank" else kind}';document.querySelector('#account-kind').dispatchEvent(new Event('change'));document.querySelector('#account-bank').value='$kind';document.querySelector('#account-bank').dispatchEvent(new Event('change'));document.querySelector('#account-amount').value='oops';document.querySelector('#account-form').requestSubmit()")
                 ui.await("document.querySelector('#account-amount').getAttribute('aria-invalid')==='true'")
                 assertEquals(before.size+if(kind=="bank_ccb")1 else 2,app.store.accounts().size)
                 ui.run("document.querySelector('#account-amount').value='12.34';document.querySelector('#account-form').requestSubmit()")
@@ -70,7 +73,7 @@ class AssetBankUiTest {
             web.await("document.querySelector('[data-account=\"$id\"] .account-bank-logo')?.naturalWidth>0")
             web.run("editAccount($id)")
             assertEquals("bank_bocom",web.text("document.querySelector('#account-bank').value"))
-            web.await("document.querySelector('#account-preview .account-bank-logo')?.naturalWidth>0")
+            web.await("document.querySelector('[data-account-kind=bank]').classList.contains('selected')")
         } } finally { if(id>0)app.store.deleteAccount(id);app.changed() }
     }
 
@@ -89,21 +92,21 @@ class AssetBankUiTest {
         }
     }
 
-    @Test fun currencyPrecedesDirectionInEditorAndLedger() {
+    @Test fun directionPrecedesCurrencyInEditorAndLedger() {
         val app=ApplicationProvider.getApplicationContext<LedgerApp>()
         val now=System.currentTimeMillis()
         val record=app.store.saveEdited(LedgerRecord(capture=Capture(Source.MANUAL,"manual","",now),
             bill=ParsedBill(2250,Direction.EXPENSE,"符号测试057","餐饮",now,null,true,"",true),state=RecordState.POSTED))
         try { ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val web=WebUiProbe(scenario);web.ready();web.run("newDraft();updateAmountSign()")
-            assertEquals("¥ -",web.text("document.querySelector('#amount-sign').textContent"))
+            assertEquals("− ¥",web.text("document.querySelector('#amount-sign').textContent"))
             web.run("go('ledger');query='符号测试057';month=localMonth(Date.now());filter='expense';viewKey='';refresh()")
-            assertEquals("¥ -22.50",web.text("document.querySelector('.entry-amount').textContent"))
+            assertEquals("− ¥ 22.5",web.text("document.querySelector('.entry-amount').textContent"))
             web.run("showCategoryDetails('餐饮','expense')")
-            assertEquals("¥ -22.50",web.text("document.querySelector('[data-category-record=\"${record.id}\"] strong').textContent"))
+            assertEquals("− ¥ 22.5",web.text("document.querySelector('[data-category-record=\"${record.id}\"] strong').textContent"))
             app.store.saveEdited(record.copy(bill=record.bill.copy(direction=Direction.INCOME)));app.changed()
             web.run("closeSheet();filter='income';viewKey='';refresh()")
-            assertEquals("¥ +22.50",web.text("document.querySelector('.entry-amount').textContent"))
+            assertEquals("+ ¥ 22.5",web.text("document.querySelector('.entry-amount').textContent"))
         } } finally { app.store.delete(record.id);app.changed() }
     }
 }

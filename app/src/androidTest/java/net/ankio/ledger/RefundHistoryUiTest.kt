@@ -73,7 +73,7 @@ class RefundHistoryUiTest {
                 val web=WebUiProbe(scenario);web.ready();web.run("openRecord(${record.id})")
                 web.await("document.querySelector('#refund-match').hidden")
                 assertEquals("true",web.value("!document.querySelector('#refund-summary').textContent.includes('待关联') && document.querySelector('#review-reason').textContent.includes('最终支出')"))
-                assertEquals("true",web.value("document.querySelector('#review-reason').hidden"))
+                assertEquals("true",web.value("!document.querySelector('#record-supplement').open && document.querySelector('#record-supplement').contains(document.querySelector('#review-reason'))"))
                 web.run("document.querySelector('#amount').focus()")
                 assertEquals("none",web.text("getComputedStyle(document.querySelector('#amount')).outlineStyle"))
             }
@@ -97,16 +97,17 @@ class RefundHistoryUiTest {
                 web.await("!document.querySelector('#refund-match').hidden && document.querySelector('#import-form .primary').hidden")
                 val blocked=JSONObject(web.text("LedgerNative.save(JSON.stringify({...readDraft(),id:${pending.id}}))"))
                 assertFalse(blocked.getBoolean("ok"))
+                web.run("document.querySelector('#category').click();document.querySelector('#record-more-button').click()")
                 web.run("document.querySelector('#refund-match').click()")
                 web.await("document.querySelector('[data-refund-target=\"${original.id}\"]')")
                 web.run("document.querySelector('[data-refund-target=\"${original.id}\"]').click();document.querySelector('#confirm-refund').click()")
                 web.await("document.querySelector('#amount').value==='36.54' && document.querySelector('#refund-summary').textContent.includes('63.46') && document.querySelectorAll('[data-history-sequence]').length===2")
                 assertEquals(3654L,app.store.get(original.id)!!.bill.amountCents)
                 assertNull(app.store.get(pending.id))
-                web.await("Array.from(document.querySelectorAll('.history-image img')).every(i=>i.complete&&i.naturalWidth>0)")
-                web.run("document.querySelector('[data-history-sequence=\"1\"]').click()")
+                web.await("!document.querySelector('.fluid-pending,.fluid-active') && !recordPanelClosing && !sheetClosing")
+                web.run("document.querySelector('#record-original').click()")
                 web.await("document.querySelector('#sheet-title').textContent.includes('1 / 2') && document.querySelector('#sheet .capture-full').naturalWidth>0 && document.querySelector('#sheet .raw-text').textContent==='原付款截图'")
-                web.run("closeSheet();document.querySelector('[data-history-sequence=\"2\"]').click()")
+                web.run("document.querySelector('#capture-next').click()")
                 web.await("document.querySelector('#sheet-title').textContent.includes('2 / 2') && document.querySelector('#sheet .raw-text').textContent==='退款截图原文'")
                 web.run("closeSheet();cancelEditor()")
                 scenario.recreate();web.ready();web.run("openRecord(${original.id})")
@@ -143,7 +144,7 @@ class RefundHistoryUiTest {
         } finally { app.store.delete(original.id);app.changed() }
     }
 
-    @Test fun fourScreenshotsUseOneCompactGalleryAndViewerSwipesBothWaysAtNarrowWidth() {
+    @Test fun fourScreenshotsOpenDirectlyInViewerAndSwipeBothWaysAtNarrowWidth() {
         val now=System.currentTimeMillis()
         val bill=bill("示例商户 · ${UUID.randomUUID().toString().take(6)}",now,"GALLERY-${UUID.randomUUID()}")
         val original=(app.store.ingest(capture(now,"付款成功，原付100元，${bill.transactionId}"),bill,screenshot=receipt("支付成功","100.00",Color.rgb(42,166,135))) as IngestResult.Saved).record
@@ -159,22 +160,12 @@ class RefundHistoryUiTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 val web=WebUiProbe(scenario);web.ready();web.run("openRecord(${original.id})")
                 web.await("document.querySelectorAll('[data-history-sequence]').length===4 && document.querySelector('#amount').value==='70'")
-                assertEquals("true",web.value("!document.querySelector('#recognition-history') && document.querySelector('.scanner').hidden && document.querySelector('#capture-gallery').compareDocumentPosition(document.querySelector('#import-form'))===4"))
-                web.await("Array.from(document.querySelectorAll('.history-image img')).slice(0,2).every(i=>i.complete&&i.naturalWidth>0)")
-                val instrumentation=InstrumentationRegistry.getInstrumentation()
-                if(InstrumentationRegistry.getArguments().getString("galleryScreenshot")=="true") {
-                    android.os.SystemClock.sleep(500)
-                    instrumentation.uiAutomation.takeScreenshot().let { screenshot ->
-                        java.io.File(app.filesDir,"gallery-detail.png").outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG,100,it) };screenshot.recycle()
-                    }
-                }
-                web.run("document.querySelector('#capture-gallery').style.maxWidth='280px'")
-                assertEquals("true",web.value("(()=>{const t=document.querySelector('.capture-thumbnails'),cards=t.querySelectorAll('.history-image');return t.scrollWidth>t.clientWidth*1.9 && cards[0].getBoundingClientRect().width<=t.clientWidth/2 && Array.from(cards).every(e=>e.getBoundingClientRect().right-e.getBoundingClientRect().left>100)})()"))
-                web.run("document.querySelector('.capture-thumbnails').scrollLeft=10000")
-                web.await("document.querySelector('.capture-thumbnails').scrollLeft>100")
-                web.await("Array.from(document.querySelectorAll('.history-image img')).every(i=>i.complete&&i.naturalWidth>0)")
-                web.run("document.querySelector('[data-history-sequence=\"3\"]').click()")
-                web.await("document.querySelector('#sheet-title').textContent==='退款截图 · 3 / 4' && document.querySelector('#capture-description').textContent.includes('实付 ¥70.00')")
+                assertEquals("true",web.value("!document.querySelector('#recognition-history') && document.querySelector('.scanner').hidden && document.querySelector('#record-originals').hidden && !!(document.querySelector('#record-fields').compareDocumentPosition(document.querySelector('#capture-gallery')) & Node.DOCUMENT_POSITION_FOLLOWING)"))
+                web.await("!document.querySelector('.fluid-pending,.fluid-active') && !recordPanelClosing")
+                web.run("document.querySelector('#record-original').click()")
+                web.await("document.querySelector('#capture-position').textContent==='1 / 4' && document.querySelector('#sheet .capture-full').naturalWidth>0")
+                web.run("document.querySelector('#capture-pages').style.maxWidth='280px';document.querySelector('#capture-pages').scrollLeft=document.querySelector('#capture-pages').clientWidth*2")
+                web.await("document.querySelector('#sheet-title').textContent==='退款截图 · 3 / 4' && document.querySelector('#capture-description').textContent.includes('实付 ¥70')")
                 web.run("document.querySelector('#capture-next').click()")
                 web.await("document.querySelector('#capture-position').textContent==='4 / 4' && document.querySelector('#capture-next').disabled")
                 web.run("document.querySelector('#capture-pages').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))")
@@ -182,8 +173,8 @@ class RefundHistoryUiTest {
                 // Scroll is the same primitive used by native touch swiping; it must update metadata too.
                 web.run("document.querySelector('#capture-pages').scrollLeft=0")
                 web.await("document.querySelector('#capture-position').textContent==='1 / 4' && document.querySelector('#capture-previous').disabled")
-                web.run("closeSheet();document.querySelector('#capture-gallery').style.maxWidth='';document.body.classList.add('large-text')")
-                assertEquals("true",web.value("document.querySelector('#capture-gallery').getBoundingClientRect().right<=innerWidth && Array.from(document.querySelectorAll('.history-image b')).every(e=>getComputedStyle(e).whiteSpace==='nowrap')"))
+                assertEquals("true",web.value("document.querySelector('#capture-pages').getBoundingClientRect().right<=innerWidth && document.querySelector('#capture-pages').scrollWidth>document.querySelector('#capture-pages').clientWidth*3"))
+                web.run("closeSheet(false)")
             }
         } finally { app.store.delete(original.id);app.changed() }
     }

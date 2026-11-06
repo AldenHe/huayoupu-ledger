@@ -21,7 +21,9 @@ internal class PaymentVisits(context:Context,name:String="payment_visits") {
         // Only the current, owner-verified page may end a visit. Raw activity
         // events from other windows or an app-resume burst are not navigation.
         if(isNavigation(page.packageName,page.activity)) {
-            begin(page.packageName)
+            // Home may briefly become active beneath the retained result window.
+            // Navigation alone cannot make that same result a second purchase.
+            check(preferences.edit().putBoolean("${page.packageName}.navigation",true).commit())
             return null
         }
         val match=PaymentPageDetector.detect(page)
@@ -31,13 +33,18 @@ internal class PaymentVisits(context:Context,name:String="payment_visits") {
             return null
         }
         if(match.transactionId!=null)return match
-        val visit=preferences.getString(page.packageName,null) ?: "${page.windowId}|${page.activity}".also {
+        val window="${page.windowId}|${page.activity}"
+        val previous=preferences.getString("${page.packageName}.result",null)
+        if(preferences.getBoolean("${page.packageName}.navigation",false) && previous!=null && previous!=window)begin(page.packageName)
+        val visit=preferences.getString(page.packageName,null) ?: window.also {
             check(preferences.edit().putString(page.packageName,it).commit())
         }
+        check(preferences.edit().putString("${page.packageName}.result",window).putBoolean("${page.packageName}.navigation",false).commit())
         return PaymentPageDetector.detect(page,visit)
     }
 
     private fun begin(packageName:String) {
-        if(preferences.contains(packageName))check(preferences.edit().putString(packageName,java.util.UUID.randomUUID().toString()).commit())
+        if(preferences.contains(packageName))check(preferences.edit().putString(packageName,java.util.UUID.randomUUID().toString())
+            .remove("$packageName.result").putBoolean("$packageName.navigation",false).commit())
     }
 }

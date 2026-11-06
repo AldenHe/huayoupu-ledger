@@ -95,8 +95,9 @@ class AutomaticSupplementTest {
 
     @Test fun ordinaryDetailWithTwoNearbyAutomaticPaymentsDoesNotPostAThirdExpense() {
         automatic(10_000);automatic(30_000)
-        val result=store.ingest(capture(at+3_600_000),bill(),screenshot=second) as IngestResult.Saved
-        assertEquals(RecordState.REVIEW,result.record.state);assertNotNull(result.record.duplicateId)
+        val result=store.ingest(capture(at+3_600_000),bill(),screenshot=second)
+        assertTrue(result is IngestResult.Skipped);assertEquals(2,store.all().size);assertTrue(store.pending().isEmpty())
+        assertTrue(store.all().all {it.bill.transactionId==null && store.captureHistory(it.id).size==1})
         assertEquals(20000L,store.posted(at-1,at+120_000).sumOf { it.bill.amountCents!! })
     }
 

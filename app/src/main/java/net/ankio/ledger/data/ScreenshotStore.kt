@@ -164,7 +164,7 @@ class ScreenshotStore internal constructor(context: Context, namespace: String =
     private fun file(hash: String) = File(directory, "$hash.jpg")
 
     companion object {
-        const val MAX_BYTES = 200L * 1024 * 1024
+        const val MAX_BYTES = 500L * 1024 * 1024
         private const val DAY = 86_400_000L
         private val PROTECTED = setOf("CAPTURING", "QUEUED", "RECOGNIZING", "UNDO")
         private val DISCARD = setOf("NO_BILL", "DUPLICATE", "CANCELLED","SKIPPED")

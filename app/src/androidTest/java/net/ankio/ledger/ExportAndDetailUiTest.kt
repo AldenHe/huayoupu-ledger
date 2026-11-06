@@ -26,6 +26,7 @@ class ExportAndDetailUiTest {
             web.run("LedgerUI.event('fileOperation','正在导出全部账单')")
             assertEquals("true",web.value("document.querySelector('#sheet').open && document.querySelector('[role=status]')!==null"))
             web.run("LedgerUI.event('fileOperation',null)")
+            web.await("!document.querySelector('#sheet').open")
             assertEquals("false",web.value("document.querySelector('#sheet').open"))
         }
     }

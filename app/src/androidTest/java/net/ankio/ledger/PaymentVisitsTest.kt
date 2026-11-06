@@ -45,10 +45,12 @@ class PaymentVisitsTest {
         assertEquals(first.eventIdentity,visits.detect(page(72))!!.eventIdentity)
     }
 
-    @Test fun navigationWithinWechatAllowsAnotherPaymentEvenInTheSameWindow()=withVisits { visits,reopen ->
+    @Test fun navigationCannotReclassifyTheSameRetainedResultAsAnotherPayment()=withVisits { visits,reopen ->
         val first=visits.detect(page())!!
         navigation(visits,PaymentApps.WECHAT,"com.tencent.mm.ui.LauncherUI")
-        val second=reopen().detect(page())!!
+        assertEquals(first.eventIdentity,reopen().detect(page())!!.eventIdentity)
+        navigation(visits,PaymentApps.WECHAT,"com.tencent.mm.ui.LauncherUI")
+        val second=reopen().detect(page(73))!!
         assertNotEquals(first.eventIdentity,second.eventIdentity)
         assertEquals(second.eventIdentity,reopen().detect(page(73))!!.eventIdentity)
     }

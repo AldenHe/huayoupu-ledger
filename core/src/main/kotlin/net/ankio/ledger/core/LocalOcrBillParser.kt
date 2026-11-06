@@ -65,7 +65,7 @@ object LocalOcrBillParser {
     private val genericMerchantLabel = Regex("^(?:商品|收单机构|付款方备注|收款方备注|转账单号|商户单号|商戶单号|对方|去看看|推荐|广告)$")
     private val digitWhitespace = Regex("(?<=[0-9])\\s+(?=[0-9])")
     private val productLabel = Regex("^(?:商品|商品说明|商品名称|交易说明)[：:]?")
-    private val transportCategory = Regex("ETC|高速|停车|地铁|公交|出租|打车|滴滴|加油", RegexOption.IGNORE_CASE)
+    private val transportCategory = Regex("ETC|高速|停车|地铁|公交|公共交通|出租|打车|滴滴|加油", RegexOption.IGNORE_CASE)
     private val diningCategory = Regex("餐厅|餐饮|食堂|饭|咖啡|奶茶|外卖|美食|早餐|火锅")
     private val householdCategory = Regex("超市|便利店|百货|日用")
     private val shoppingCategory = Regex("淘宝|京东|拼多多|天猫|购物")
@@ -84,7 +84,7 @@ object LocalOcrBillParser {
             .filter { it.text.isNotBlank() }
         if (clean.isEmpty()) return null
         val text = clean.joinToString("\n") { it.text }
-        if(TransactionRejection.reason(text)!=null)return null
+        if(TransactionRejection.reason(text,manualCapture=!expenseOnly && livePaymentAt==null)!=null)return null
         val compact = text.filterNot(Char::isWhitespace)
         val isRefund = refundIntent.containsMatchIn(compact)
         val paidTimes = labeledValues(clean, paymentTimeLabel)
@@ -301,19 +301,27 @@ object LocalOcrBillParser {
             return it.text.replace(scanPaymentPrefix, "").removePrefix("给").take(80)
         }
         val headerLine = header?.first
-        if (height > 0 && headerLine != null && headerLine.bottom > headerLine.top) {
+        if (width > 0 && headerLine != null && headerLine.bottom > headerLine.top) {
             // Merchant cards repeat the trading name immediately below the amount.
             // The upper card also contains likes, navigation and customer avatars.
             val below=lines.filter { line ->
                 line.top>=headerLine.bottom && line.top-headerLine.bottom<width*.14 && line.bottom>line.top &&
                     kotlin.math.abs((line.left+line.right-headerLine.left-headerLine.right)/2.0)<width*.16 && plausibleMerchant(line.text)
-            }.map { it.text }.distinct()
-            below.singleOrNull()?.let { return it.take(80) }
+            }.groupBy { it.text }.values.singleOrNull()?.minByOrNull { it.top }
+            // Themed payment cards can sit near the bottom of the screenshot.
+            // Bind their title to the amount, not a fixed band of the whole page;
+            // distant decorative headings cannot supply the merchant by themselves.
             val above = lines.filter { line ->
-                line.bottom <= headerLine.top && line.top > height * .12 && line.top < height * .55 &&
-                    (width <= 0 || (line.left + line.right) / 2.0 in width * .18..width * .82) && plausibleMerchant(line.text)
-            }.sortedByDescending { it.top }
-            above.firstOrNull()?.let { return it.text.take(80) }
+                line.bottom > line.top && line.bottom <= headerLine.top && headerLine.top-line.bottom < width*.30 &&
+                    kotlin.math.abs((line.left+line.right-headerLine.left-headerLine.right)/2.0)<width*.20 &&
+                    (line.left+line.right)/2.0 in width*.18..width*.82 && plausibleMerchant(line.text)
+            }.maxByOrNull { it.bottom }
+            // Prefer the title touching the amount. A payment-method row below it
+            // must not displace a closer title above; wallet cards with their name
+            // directly below the amount keep that name (including ties).
+            if (below!=null && (above==null || below.top-headerLine.bottom<=headerLine.top-above.bottom))
+                return below.text.take(80)
+            above?.let { return it.text.take(80) }
         }
         // Wallets show the trading name above the amount; the legal full name below
         // can be a different person or company and must not break the icon anchor.

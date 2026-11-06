@@ -18,12 +18,15 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RecognitionBannerFallbackTest {
-    @Test fun savedResultIsTouchableAndOpensItsBillWhilePermissionRepairTakesPriority() {
+    @Test fun missingResultStaysQuietWhilePermissionRepairTakesPriority() {
         val app=ApplicationProvider.getApplicationContext<LedgerApp>()
         var capsule:View?=null
         var flags=0
         var opened:android.content.Intent?=null
-        val manager=object:WindowManager by app.getSystemService(WindowManager::class.java) {
+        val systemWindows=app.getSystemService(WindowManager::class.java)
+        val manager=object:WindowManager by systemWindows {
+            override fun getMaximumWindowMetrics()=systemWindows.maximumWindowMetrics
+            override fun getCurrentWindowMetrics()=systemWindows.currentWindowMetrics
             override fun addView(view:View,params:ViewGroup.LayoutParams) { capsule=view;flags=(params as WindowManager.LayoutParams).flags }
             override fun removeViewImmediate(view:View) { capsule=null }
         }
@@ -39,13 +42,13 @@ class RecognitionBannerFallbackTest {
             assertNotNull(capsule)
         }
         try {
-            banner.show("已记账 ¥ 22.50",recordId=42);waitForCapsule()
-            assertEquals(0,flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-            instrumentation.runOnMainSync { capsule!!.performClick() }
-            assertEquals(net.ankio.ledger.ui.MainActivity.OPEN_RECORD,opened!!.action)
-            assertEquals(42L,opened!!.getLongExtra("recordId",0))
+            banner.show("已记账 ¥ 22.50",recordId=Long.MAX_VALUE)
+            instrumentation.waitForIdleSync()
+            assertNull("A missing bill must not create a green success capsule",capsule)
+            assertNull(opened)
             opened=null;var repaired=false
             banner.show("请开启页面识别权限",onRepair={repaired=true},recordId=42);waitForCapsule()
+            assertEquals(0,flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
             instrumentation.runOnMainSync { capsule!!.performClick() }
             assertTrue(repaired);assertNull(opened)
         } finally { instrumentation.runOnMainSync { banner.removeNow() } }

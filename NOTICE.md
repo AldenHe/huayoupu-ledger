@@ -36,8 +36,11 @@ Gradle Wrapper 使用 Apache-2.0；Release 网页构建工具 javascript-obfusca
 
 ## 字体、品牌与参考
 
+- 小票交互参考 UI Buttons 的按键层次（MIT）并改编 Arslan Agayev 的 [Payment Receipt](https://github.com/arslanagayev/payment-receipt-animation) 分段走纸（MIT，1c893a2）。完整原始许可随包保留于 `app/src/main/assets/web/receipt-interaction-LICENSE.txt`。ReceiptLine 仅作票据排版研究，未引入代码或运行依赖。
+
 - Font Awesome 来自 [FortAwesome/Font-Awesome 6.5.2](https://github.com/FortAwesome/Font-Awesome/tree/6.5.2)，完整许可在 `app/src/main/assets/web/vendor/LICENSE.txt`，不删除署名。
 - 五家银行标识来自官网，仅用于识别账户类型，权利属于各银行，不表示服务关系或背书。来源见下方“银行图标来源”。GPL 不授予银行商标权，也不替代标识使用所需授权。
+- 微信、支付宝账户图标来自各自官网发布的原始图像，仅用于识别账户类别，未重绘。来源和机械适配见下方“支付品牌图标来源”；商标权属于相应权利人，GPL 不包含商标授权。
 - 花有谱启动图标采用 2026-11-04 通过 toImage 配置的备用服务、gpt-image-2.5 模型生成的“账页开花”素材；项目完成透明前景、Android 自适应与单色资源适配。原图、最终提示词和适配说明见 `.github/branding/`。历史“慧铭”启动图标曾使用 qwen-image-3.0 生成素材，现已替换。源码许可不提供第三方品牌背书或商标许可。
 - 视觉参考为用户提供的 HTML ZIP，来源与摘要见下方“视觉参考来源”。原型原件没有独立开源许可，公共源码导出排除其原始 HTML、CSS 和归档；来源记录保留，不将第三方参考改标为 GPL。
 
@@ -57,6 +60,19 @@ Gradle Wrapper 使用 Apache-2.0；Release 网页构建工具 javascript-obfusca
 
 打包文件：`app/src/main/assets/web/banks/*.png`。品牌标识权利仍属于各银行，仅用于展示用户自行维护的账户类型。银行选择不会建立银行连接，也不会读取卡号、余额或交易。
 
+## 支付品牌图标来源
+
+采集时间：2026-11-06。通过官网实际页面的图标链接定位原文件，不使用第三方重绘图库。
+
+| 品牌 | 官网页面 | 官网引用的原图 |
+| --- | --- | --- |
+| 微信 | https://www.wechat.com/en/ | https://newres.wechat.com/t/fed_upload/08b92997-2415-408f-b706-442ed4ede518/OTE0YTAw.png |
+| 支付宝 | https://www.alipay.com/ | https://mdn.alipayobjects.com/rms/afts/file/A*7EyORZxdNDkAAAAAAAAAAAAAARQnAQ |
+
+微信使用官网 `apple-touch-icon-precomposed` 的180×180原图；支付宝使用官网 `shortcut icon` 引用的透明PNG，只裁去透明空白、方画布居中并等比缩至180×180，保留原图配色和轮廓。打包文件位于 `app/src/main/assets/web/payment-brands/`，随包来源说明见同目录 `SOURCE.txt`。这些图标不表示花有谱与微信、支付宝存在合作、官方认证或账户连接。
+
+账户方标 `alipay-square.png` 来自支付宝官方下载页 `https://mobile.alipay.com/index.htm` 所链接的 Android 安装包：`wallet_103608100_client_release_202303081916_64.apk` 的 `res/drawable-xxxhdpi-v4/appicon.png`。保留192×192原始图像，仅补充来源元数据；完整下载链接见随包 `SOURCE.txt`。
+
 ## 视觉参考来源
 
 当前用户提供 ZIP：记账-version1.0-20261016-141311-533.zip
@@ -68,3 +84,5 @@ SHA-256：`b1d41f7fa82c345be8bfda6c9488a80680883e11e8d2d869c4b009cc5365c3ff`
 前版：记账-version1.0-20261016-135232-679.zip，SHA-256 `b360b498a461b64ae40f148aa66b1eeabb299ab5e52fe4cc2b018bf6b1582381`。
 
 原件未提供独立开源许可；保留摘要和来源记录不代表授予其再分发权。当前项目代码的开源许可见根目录 LICENSE，第三方范围见 NOTICE.md。
+
+2026-11-05 账单汇总的全屏送纸交互另外参考 aqkprogrammer/receipt-printer（MIT，Copyright (c) 2026 Abdul Qadir Khan）。仅采用本机热敏小票显示的送纸与纸边设计，未引入支付演示、支付数据、声音或网络依赖。许可原文随 app/src/main/assets/web/receipt-interaction-LICENSE.txt 分发。

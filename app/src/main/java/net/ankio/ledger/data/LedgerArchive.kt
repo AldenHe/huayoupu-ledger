@@ -20,6 +20,7 @@ object LedgerArchive {
     const val MAX_ATTACHMENTS = 100_000
     private val hashPattern = Regex("[0-9a-f]{64}")
     private val attachmentPattern = Regex("images/([0-9a-f]{64})\\.bin")
+    private val originalPattern = Regex("originals/([0-9a-f]{64})\\.bin")
 
     data class Summary(val records: Int, val attachments: Int, val attachmentBytes: Long)
 
@@ -30,6 +31,7 @@ object LedgerArchive {
         internal val files: Map<String, File> = emptyMap(),
         internal val historyAssets: Map<String, Map<Int, String>> = emptyMap(),
         internal val iconAssets: Map<String, String> = emptyMap(),
+        internal val originalFiles: Map<String, File> = emptyMap(),
         val legacy: Boolean = false,
     ) : Closeable {
         val recordCount get() = backup.records.size
@@ -47,7 +49,10 @@ object LedgerArchive {
     /** The caller owns output. A complete manifest is written only after all images succeed. */
     fun write(store: LedgerStore, channels: ChannelSettings, output: OutputStream): Summary = synchronized(store) {
         val records = store.all()
-        val ledger = JSONObject(LedgerBackup.encode(records, channels, store.accounts(), store.customCategories()))
+        val ledger = JSONObject(LedgerBackup.encode(records, channels, store.accounts(), store.customCategories(),store.defaultAccount()?.uid,store.channelDefaultAccounts(),AccountTransfers(store).list()))
+        val reimbursements = ReimbursementStore(store.reimbursementContext, store)
+        val reimbursement = reimbursements.backupMetadata()
+        ledger.put("reimbursement", reimbursement)
         val histories = JSONObject()
         val icons = JSONObject()
         val stored = mutableSetOf<String>()
@@ -89,6 +94,16 @@ object LedgerArchive {
                 store.merchantIcon(record.id)?.let { icons.put(record.uid, attachment(it)) }
             }
             ledger.put("histories", histories)
+            val originals=reimbursement.getJSONArray("attachments")
+            val originalHashes=mutableSetOf<String>()
+            for(i in 0 until originals.length()) {
+                val a=originals.getJSONObject(i);val hash=a.getString("sha256")
+                require(originalHashes.add(hash) && stored.size+originalHashes.size<=MAX_ATTACHMENTS) { "报销原件重复或数量过多" }
+                val file=reimbursements.attachmentFile(a.getString("uid"))
+                bytes+=file.length();require(bytes<=MAX_TOTAL_BYTES) { "备份内容超过 512 MB" }
+                zip.putNextEntry(ZipEntry("originals/$hash.bin"))
+                file.inputStream().use { it.copyTo(zip,8192) };zip.closeEntry()
+            }
             val manifest = JSONObject().put("format", "simple-ledger-archive").put("version", 1)
                 .put("ledger", ledger).put("merchantIcons", icons).toString().toByteArray(Charsets.UTF_8)
             require(manifest.size <= MAX_MANIFEST_BYTES && bytes + manifest.size <= MAX_TOTAL_BYTES) { "备份内容超过容量限制" }
@@ -96,7 +111,7 @@ object LedgerArchive {
             zip.write(manifest)
             zip.closeEntry()
         }
-        Summary(records.size, stored.size, bytes)
+        Summary(records.size, stored.size + reimbursement.getJSONArray("attachments").length(), bytes)
     }
 
     /** ZIP is staged and checked before restore; old JSON backups keep their original validation. */
@@ -117,6 +132,7 @@ object LedgerArchive {
         val directory = File.createTempFile("ledger-archive-", ".tmp", cacheDir)
         check(directory.delete() && directory.mkdir()) { "无法创建备份缓存" }
         val files = linkedMapOf<String, File>()
+        val originals = linkedMapOf<String, File>()
         try {
             var total = 0L
             var manifest: JSONObject? = null
@@ -141,10 +157,11 @@ object LedgerArchive {
                     val entry = entries.nextElement()
                     require(!entry.isDirectory && names.add(entry.name) && names.size <= MAX_ATTACHMENTS + 1) { "备份包含重复或无效文件" }
                     val match = attachmentPattern.matchEntire(entry.name)
-                    require(entry.name == "manifest.json" || match != null) { "备份包含不支持的文件" }
-                    val limit = if (match == null) MAX_MANIFEST_BYTES else MAX_IMAGE_BYTES
+                    val original = originalPattern.matchEntire(entry.name)
+                    require(entry.name == "manifest.json" || match != null || original != null) { "备份包含不支持的文件" }
+                    val limit = if(original!=null) ReimbursementStore.MAX_ATTACHMENT_BYTES else if (match == null) MAX_MANIFEST_BYTES.toLong() else MAX_IMAGE_BYTES.toLong()
                     require(entry.size < 0 || entry.size <= limit) { "备份文件超过容量限制" }
-                    val target = File(directory, if (match == null) "manifest.json" else match.groupValues[1])
+                    val target = File(directory, if(original!=null) "original-"+original.groupValues[1] else if (match == null) "manifest.json" else match.groupValues[1])
                     val digest = MessageDigest.getInstance("SHA-256")
                     val crc = CRC32()
                     var size = 0L
@@ -162,7 +179,12 @@ object LedgerArchive {
                         }
                     } }
                     require(size == entry.size && crc.value == entry.crc) { "备份文件已损坏" }
-                    if (match == null) manifest = JSONObject(target.readText(Charsets.UTF_8))
+                    if(original!=null) {
+                        val hash=original.groupValues[1]
+                        require(size>0 && hex(digest.digest())==hash) { "报销原件已损坏" }
+                        originals[hash]=target
+                    }
+                    else if (match == null) manifest = JSONObject(target.readText(Charsets.UTF_8))
                     else {
                         val hash = match.groupValues[1]
                         require(size > 0 && hex(digest.digest()) == hash) { "账单图片已损坏" }
@@ -200,7 +222,14 @@ object LedgerArchive {
             }
             val references = historyAssets.values.flatMap { it.values }.toSet() + iconAssets.values
             require(references == files.keys) { "备份包含未关联的图片" }
-            return PreparedBackup(backup, directory, files, historyAssets, iconAssets)
+            val attachments=backup.reimbursement?.getJSONArray("attachments") ?: JSONArray()
+            val originalReferences=mutableSetOf<String>()
+            for(i in 0 until attachments.length()) {
+                val a=attachments.getJSONObject(i);val hash=checkedReference(a.get("sha256"),originals)
+                require(originalReferences.add(hash) && originals.getValue(hash).length()==a.getLong("size")) { "原件大小无效或重复" }
+            }
+            require(originalReferences==originals.keys) { "备份包含未关联的报销原件" }
+            return PreparedBackup(backup, directory, files, historyAssets, iconAssets, originals)
         } catch (error: Throwable) {
             directory.listFiles()?.forEach { it.delete() }
             directory.delete()
@@ -212,7 +241,7 @@ object LedgerArchive {
     fun restore(store: LedgerStore, prepared: PreparedBackup): Int = synchronized(store) {
         prepared.ensureOpen()
         if (prepared.legacy) return@synchronized LedgerBackup.restore(store, prepared.backup)
-        LedgerBackup.restore(store, prepared.backup) { record ->
+        LedgerBackup.restore(store, prepared.backup, prepared.originalFiles) { record ->
             prepared.backup.histories[record.uid]?.let { entries ->
                 store.restoreHistory(record.id, entries) { restored ->
                     prepared.historyAssets[record.uid]?.get(restored.entry.sequence)?.let { hash ->

@@ -72,9 +72,10 @@ class WebViewUiTest {
                 web.await("document.querySelector('[data-record=\"${expense.id}\"]') && !document.querySelector('[data-record=\"${income.id}\"]')")
                 web.run("document.querySelector('[data-filter=\"income\"]').click()")
                 web.await("document.querySelector('[data-record=\"${income.id}\"]') && !document.querySelector('[data-record=\"${expense.id}\"]')")
-                web.run("document.querySelector('[data-filter=\"expense\"]').click();document.querySelector('#month').click();document.querySelector('#month-next').click();document.querySelector('#month-apply').click()")
+                web.run("document.querySelector('[data-filter=\"expense\"]').click()")
+                changeMonth(web,"2098-09")
                 web.await("document.querySelector('#month h1').textContent==='2098年9月' && document.querySelectorAll('#entries [data-record]').length===0")
-                web.run("document.querySelector('#month').click();document.querySelector('#month-prev').click();document.querySelector('#month-apply').click()")
+                changeMonth(web,"2098-08")
 
                 web.run("document.querySelector('[data-filter=expense]').click();document.querySelector('[data-record=\"${expense.id}\"]').click()")
                 web.await("document.querySelector('#record-panel').open && document.querySelector('#merchant').value===${quote(expenseName)}")
@@ -297,7 +298,7 @@ class WebViewUiTest {
     }
 
     private fun changeMonth(web: WebUiProbe, month: String) {
-        web.run("document.querySelector('#month').click();document.querySelector('#month-picker').value=${quote(month)};document.querySelector('#month-apply').click()")
+        web.run("document.querySelector('#month').click();document.querySelector('#month-picker').value='$month';document.querySelector('#month-apply').click()")
         web.await("window.LedgerUI.getState().month===${quote(month)}")
     }
 

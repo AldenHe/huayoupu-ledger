@@ -27,7 +27,7 @@ class CaptureProcessor(private val app: LedgerApp, private val client: OcrClient
         return client.recognizePrepared(image,onPrepared=prepared,stillAllowed=guard,livePaymentAt=liveAt,expenseOnly=expenseOnly,origin=origin)
     }
 
-    private fun recordedMessage(cents:Long?)=if(cents==null)"已记账" else "已记账 ¥${net.ankio.ledger.core.Money.format(cents)}"
+    private fun recordedMessage(cents:Long?)=if(cents==null)"已记账" else "已记账 ¥${net.ankio.ledger.core.Money.display(cents)}"
 
     private suspend fun processRecognition(source:Source,origin:String,taskId:Long?,beforeAccept:suspend ()->Unit,allowed:()->Boolean,
         recognize:suspend (()->Boolean)->net.ankio.ledger.ocr.RecognitionResult):IngestResult {
@@ -49,7 +49,8 @@ class CaptureProcessor(private val app: LedgerApp, private val client: OcrClient
             currentCoroutineContext().ensureActive()
             beforeAccept()
             if(!guard())throw CancellationException("识别已停止")
-            val skip=recognized.skipReason ?: net.ankio.ledger.core.TransactionRejection.reason(recognized.rawText) ?:
+            val skip=recognized.skipReason ?: net.ankio.ledger.core.TransactionRejection.reason(recognized.rawText,
+                manualCapture=taskId?.let(app.tasks::automatic)!=true) ?:
                 recognized.bill?.takeIf { it.refund!=null && it.amountCents==0L }?.let { "已全额退款，不予记账" }
             skip?.let { message ->
                 taskId?.let { app.tasks.update(it,"SKIPPED",message);app.tasks.diagnose(it,"stage","skipped_transaction") }

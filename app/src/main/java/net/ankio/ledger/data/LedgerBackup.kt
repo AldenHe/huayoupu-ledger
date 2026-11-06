@@ -10,7 +10,10 @@ import java.util.UUID
 
 data class ValidatedBackup(val records: List<LedgerRecord>, val channels: Map<ChannelSettings.Channel, Boolean>,
     val accounts: List<LedgerAccount> = emptyList(), val categories: List<CustomCategory> = emptyList(),
-    val histories:Map<String,List<RestoredCaptureHistory>> = emptyMap())
+    val histories:Map<String,List<RestoredCaptureHistory>> = emptyMap(),
+    val reimbursement: JSONObject? = null, val defaultAccountUid:String? = null,
+    val channelDefaultAccounts:Map<String,String> = emptyMap(),
+    val transfers:List<AccountTransfer> = emptyList())
 
 object LedgerBackup {
     const val MAX_BYTES = 16 * 1024 * 1024
@@ -52,7 +55,7 @@ object LedgerBackup {
     }
     fun encode(store: LedgerStore, channels: ChannelSettings): String = synchronized(store) {
         val records=store.all()
-        val root=JSONObject(encode(records, channels, store.accounts(), store.customCategories()))
+        val root=JSONObject(encode(records, channels, store.accounts(), store.customCategories(),store.defaultAccount()?.uid,store.channelDefaultAccounts(),AccountTransfers(store).list()))
         val histories=JSONObject()
         val grouped=store.captureHistories()
         var imageBytes=0L
@@ -68,26 +71,44 @@ object LedgerBackup {
             if(entries.length()>0)histories.put(record.uid,entries)
         }
         root.put("histories",histories)
+        val reimbursement=ReimbursementStore(store.reimbursementContext,store).backupMetadata()
+        require(reimbursement.getJSONArray("attachments").length()==0) { "报销原件请使用完整 ZIP 备份" }
+        root.put("reimbursement",reimbursement)
         root.toString().also { require(it.toByteArray(Charsets.UTF_8).size<=MAX_BYTES) { "备份及截图超过 16 MB" } }
     }
 
     /** Only newly imported UUIDs receive history; restoring must not overwrite later local edits. */
-    fun restore(store:LedgerStore,backup:ValidatedBackup,restoreMedia:(LedgerRecord)->Unit={ record ->
+    fun restore(store:LedgerStore,backup:ValidatedBackup,originalFiles:Map<String,java.io.File> = emptyMap(),restoreMedia:(LedgerRecord)->Unit={ record ->
         backup.histories[record.uid]?.let { store.restoreHistory(record.id,it) }
     }):Int=synchronized(store) {
+        validateChannelDefaults(backup.channelDefaultAccounts,backup.accounts)
         val old=store.activeRecordIdsByUid()
+        val hadAccounts=store.accounts().isNotEmpty()
         val db=store.writableDatabase
+        val createdOriginals=mutableListOf<java.io.File>()
+        var successful=false
         db.beginTransaction()
         try {
-            val count=store.merge(backup.records,backup.accounts,backup.categories)
+            val count=store.mergeRestored(backup.records,backup.accounts,backup.categories,backup.transfers)
+            if(!hadAccounts) {
+                if(backup.defaultAccountUid!=null)store.setDefaultAccount(backup.defaultAccountUid)
+                backup.channelDefaultAccounts.forEach { (channel,uid)->store.setChannelDefaultAccount(channel,uid) }
+            }
             for((uid,id) in store.activeRecordIdsByUid())if(uid !in old)restoreMedia(requireNotNull(store.get(id)))
-            db.setTransactionSuccessful();count
+            backup.reimbursement?.let { ReimbursementStore(store.reimbursementContext,store).restoreMetadata(it,originalFiles,createdOriginals) }
+            ReimbursementStore.validateStoredRelationships(db)
+            db.setTransactionSuccessful();successful=true;count
         } catch(error:Throwable) {
             // ScreenshotStore uses a separate database. Release all imported owners while
             // the uncommitted history rows still identify them, before rolling back the batch.
-            store.activeRecordIdsByUid().filterKeys { it !in old }.values.forEach(store::delete)
+            store.activeRecordIdsByUid().filterKeys { it !in old }.values.forEach(store::releaseRestoredMedia)
             throw error
-        } finally { db.endTransaction() }
+        } finally {
+            var ended=false
+            try { db.endTransaction();ended=true } finally {
+                if(!successful || !ended) createdOriginals.forEach { check(!it.exists() || it.delete()) { "无法清理本次恢复的临时原件" } }
+            }
+        }
     }
 
     internal fun historyJson(e:RecordCaptureHistory)=JSONObject().put("sequence",e.sequence).put("at",e.at)
@@ -96,7 +117,9 @@ object LedgerBackup {
         .put("refundAmountCents",e.refundAmountCents?:JSONObject.NULL).put("image",JSONObject.NULL)
 
     fun encode(records: List<LedgerRecord>, channels: ChannelSettings,
-               accounts: List<LedgerAccount> = emptyList(), categories: List<CustomCategory> = emptyList()): String {
+               accounts: List<LedgerAccount> = emptyList(), categories: List<CustomCategory> = emptyList(), defaultAccountUid:String? = null,
+               channelDefaultAccounts:Map<String,String> = emptyMap(), transfers:List<AccountTransfer> = emptyList()): String {
+        validateChannelDefaults(channelDefaultAccounts,accounts)
         val settings = JSONObject()
         ChannelSettings.Channel.entries.forEach { settings.put(it.key, channels.enabled(it)) }
         val array = JSONArray()
@@ -109,8 +132,9 @@ object LedgerBackup {
             put("occurredAt", r.bill.occurredAt); put("transactionId", r.bill.transactionId ?: JSONObject.NULL)
             put("reliable", r.bill.reliable); put("timeExplicit", r.bill.timeExplicit)
             put("state", r.state.name); put("reason", r.reason)
-            put("note", r.note)
+            put("note", r.note);put("tags",JSONArray(BillTags.encode(r.tags)));put("requiresReimbursement",r.requiresReimbursement)
             put("identities",JSONArray(TransactionIdentities.encode(r.identities)))
+            put("accountUid",r.accountUid ?: JSONObject.NULL);put("accountEffect",r.accountEffect)
             r.bill.refund?.let { refund -> put("refund",JSONObject().put("provider",refund.provider)
                 .put("originalAmountCents",refund.originalAmountCents).put("refundedCents",refund.refundedCents)
                 .put("mode",refund.mode).put("refundId",refund.refundId?:JSONObject.NULL)) }
@@ -120,7 +144,7 @@ object LedgerBackup {
             account.validate()
             accountArray.put(JSONObject().put("uid", account.uid).put("name", account.name)
                 .put("description", account.description).put("amountCents", account.amountCents)
-                .put("kind", account.kind).put("type", account.type.name))
+                .put("kind", account.kind).put("type", account.type.name).put("includedInAssets",account.includedInAssets))
         }
         val custom = JSONObject()
         Direction.entries.forEach { direction ->
@@ -128,9 +152,29 @@ object LedgerBackup {
             categories.filter { it.direction == direction }.forEach { it.validate(); names.put(it.name) }
             custom.put(if (direction == Direction.EXPENSE) "expense" else "income", names)
         }
-        return JSONObject().put("format", "simple-ledger").put("version", 3)
+        val accountsByUid=accounts.associateBy { it.uid }
+        require(transfers.map { it.uid }.distinct().size==transfers.size) { "转账标识重复" }
+        val transferArray=JSONArray()
+        transfers.forEach { value ->
+            value.validate()
+            val from=requireNotNull(accountsByUid[value.fromUid]) { "转出账户不存在" }
+            val to=requireNotNull(accountsByUid[value.toUid]) { "转入账户不存在" }
+            transferArray.put(JSONObject().put("uid",value.uid).put("fromUid",value.fromUid).put("toUid",value.toUid)
+                .put("amountCents",value.amountCents).put("occurredAt",value.occurredAt).put("note",value.note)
+                .put("fromEffect",AccountTransfers.effect(from.type,value.amountCents,true))
+                .put("toEffect",AccountTransfers.effect(to.type,value.amountCents,false)))
+        }
+        return JSONObject().put("format", "simple-ledger").put("version", 8)
             .put("channels", settings).put("records", array).put("accounts", accountArray)
-            .put("customCategories", custom).toString(2)
+            .put("customCategories", custom).put("defaultAccountUid",defaultAccountUid?:JSONObject.NULL)
+            .put("channelDefaultAccounts",JSONObject(channelDefaultAccounts)).put("transfers",transferArray).toString(2)
+    }
+
+    private fun validateChannelDefaults(defaults:Map<String,String>,accounts:List<LedgerAccount>) {
+        defaults.forEach { (channel,uid)->
+            require(channel in setOf("wechat","alipay")) { "不支持的默认账户支付渠道" }
+            require(UUID.fromString(uid).toString()==uid && accounts.any { it.uid==uid }) { "支付渠道默认账户不存在或标识无效" }
+        }
     }
 
     fun decode(stream: InputStream): ValidatedBackup {
@@ -149,7 +193,7 @@ object LedgerBackup {
     /** Reuse the legacy schema validation for ZIP metadata, whose image bytes live separately. */
     internal fun decodeMetadata(root: JSONObject): ValidatedBackup {
         val version = root.get("version")
-        require(root.get("format") == "simple-ledger" && version is Int && version in 1..3) { "备份格式或版本不支持" }
+        require(root.get("format") == "simple-ledger" && version is Int && version in 1..8) { "备份格式或版本不支持" }
         val array = root.getJSONArray("records")
         require(array.length() <= 100_000) { "备份记录过多" }
         val uids = mutableSetOf<String>()
@@ -182,12 +226,16 @@ object LedgerBackup {
             val state = RecordState.valueOf(text("state"))
             if(refund!=null)require(direction==Direction.EXPENSE && (state!=RecordState.POSTED || amount==refund.originalAmountCents-refund.refundedCents)) { "退款净额不一致" }
             require(state != RecordState.POSTED || amount != null && direction != null) { "已入账记录缺少金额或收支类型" }
+            val tags=if(version>=4)BillTags.decode(obj.getJSONArray("tags").toString()) else emptyList()
+            val reimbursement=if(version>=5)bool("requiresReimbursement") else BillTags.LEGACY_REIMBURSEMENT in tags
             LedgerRecord(uid = uid,
                 capture = Capture(Source.valueOf(text("source")), text("origin"), text("text", 32_768), positiveTime("receivedAt")),
                 bill = ParsedBill(amount, direction, text("merchant"), text("category"), positiveTime("occurredAt"),
                     if (obj.isNull("transactionId")) null else text("transactionId"), bool("reliable"), text("reason"), bool("timeExplicit"),refund),
-                state = state, reason = text("reason"), note = text("note", 500),
-                identities=obj.optJSONArray("identities")?.let { TransactionIdentities.decode(it.toString()) } ?: emptyList())
+                state = state, reason = text("reason"), note = text("note", 500), tags=tags-BillTags.LEGACY_REIMBURSEMENT,requiresReimbursement=reimbursement,
+                identities=obj.optJSONArray("identities")?.let { TransactionIdentities.decode(it.toString()) } ?: emptyList(),
+                accountUid=if(version>=6 && !obj.isNull("accountUid"))text("accountUid",36) else null,
+                accountEffect=if(version>=6)integer("accountEffect").also { require(it in -Money.MAX_CENTS..Money.MAX_CENTS) } else 0)
         }
         val settings = root.getJSONObject("channels")
         val channels = ChannelSettings.Channel.entries.associateWith { channel ->
@@ -206,11 +254,47 @@ object LedgerBackup {
                 require(amount is Int || amount is Long) { "账户余额必须为整数分" }
                 val account = LedgerAccount(uid = text("uid", 36), name = text("name", 40),
                     description = text("description", 80), amountCents = (amount as Number).toLong(),
-                    kind = text("kind", 16), type = AccountType.valueOf(text("type", 16)))
+                    kind = text("kind", 16), type = AccountType.valueOf(text("type", 16)),
+                    includedInAssets=if(version>=8 && obj.has("includedInAssets"))(obj.get("includedInAssets") as? Boolean ?: error("计入资产开关格式错误")) else true)
                 account.validate()
                 require(accountUids.add(account.uid)) { "账户标识重复" }
                 account
             }
+        }
+        val defaultAccountUid=if(version>=6 && !root.isNull("defaultAccountUid"))root.getString("defaultAccountUid") else null
+        require(defaultAccountUid==null || accounts.any { it.uid==defaultAccountUid }) { "默认账户不存在" }
+        val channelDefaultAccounts=if(version>=7 && root.has("channelDefaultAccounts")) {
+            val defaults=root.getJSONObject("channelDefaultAccounts")
+            defaults.keys().asSequence().associateWith { defaults.get(it) as? String ?: error("支付渠道默认账户格式错误") }
+        }else emptyMap()
+        validateChannelDefaults(channelDefaultAccounts,accounts)
+        val accountsByUid=accounts.associateBy { it.uid }
+        val transfers=if(version>=8) {
+            val values=root.getJSONArray("transfers")
+            require(values.length()<=100_000) { "备份转账记录过多" }
+            val transferUids=mutableSetOf<String>()
+            (0 until values.length()).map { index ->
+                val obj=values.getJSONObject(index)
+                fun integer(key:String):Long {
+                    val value=obj.get(key);require(value is Int || value is Long) { "转账字段必须为整数：$key" }
+                    return (value as Number).toLong()
+                }
+                fun text(key:String):String=obj.get(key) as? String ?: error("转账字段格式错误：$key")
+                val transfer=AccountTransfer(text("uid"),text("fromUid"),text("toUid"),integer("amountCents"),integer("occurredAt"),text("note"))
+                transfer.validate()
+                require(transferUids.add(transfer.uid)) { "转账标识重复" }
+                val from=requireNotNull(accountsByUid[transfer.fromUid]) { "转出账户不存在" }
+                val to=requireNotNull(accountsByUid[transfer.toUid]) { "转入账户不存在" }
+                require(integer("fromEffect")==AccountTransfers.effect(from.type,transfer.amountCents,true) &&
+                    integer("toEffect")==AccountTransfers.effect(to.type,transfer.amountCents,false)) { "转账余额关联不一致" }
+                transfer
+            }
+        } else emptyList()
+        for(record in records) {
+            val account=record.accountUid?.let { uid->accountsByUid[uid] ?: error("关联账户不存在") }
+            val signed=if(record.bill.direction==Direction.EXPENSE)-(record.bill.amountCents?:0) else record.bill.amountCents?:0
+            val expected=if(record.state!=RecordState.POSTED || account==null)0L else if(account.type==AccountType.LIABILITY)-signed else signed
+            require(record.accountEffect==expected) { "账户余额关联不一致" }
         }
         val categories = if (version == 1) emptyList() else {
             val custom = root.getJSONObject("customCategories")
@@ -255,6 +339,7 @@ object LedgerBackup {
                 }
             }
         }
-        return ValidatedBackup(records, channels, accounts, categories,histories)
+        val reimbursement=if(root.has("reimbursement"))ReimbursementStore.validateBackup(root.getJSONObject("reimbursement"),records) else null
+        return ValidatedBackup(records, channels, accounts, categories,histories,reimbursement,defaultAccountUid,channelDefaultAccounts,transfers)
     }
 }

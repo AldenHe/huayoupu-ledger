@@ -38,7 +38,7 @@ object SyntheticRecognition {
             val json = objectFromText(text)
             val isBill = json.opt("is_bill") as? Boolean ?: throw RecognitionException("模型结果缺少账单判断，请重试或更换模型")
             val raw = (json.opt("raw_text") as? String).orEmpty().take(16_384)
-            net.ankio.ledger.core.TransactionRejection.reason(raw)?.let { return RecognitionResult(raw,null,skipReason=it) }
+            net.ankio.ledger.core.TransactionRejection.reason(raw,manualCapture=!expenseOnly)?.let { return RecognitionResult(raw,null,skipReason=it) }
             // Refund pages remain actionable review results even if an older model says NO_BILL.
             val isRefund = refundIntent(raw) ||
                 (json.has("refund") && !json.isNull("refund"))

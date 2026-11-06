@@ -1,0 +1,9 @@
+<resources>
+    <color name="native_control_surface">#EBFFFFFF</color>
+    <style name="NativeControlsDialog" parent="NativeControlsDialogBase">
+        <item name="android:windowBackgroundBlurRadius">24dp</item>
+        <item name="android:windowBlurBehindEnabled">true</item>
+        <item name="android:windowBlurBehindRadius">16dp</item>
+        <item name="android:backgroundDimAmount">0.2</item>
+    </style>
+</resources>

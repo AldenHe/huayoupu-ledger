@@ -1,7 +1,8 @@
 package net.ankio.ledger.ui
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -9,6 +10,7 @@ import android.os.Bundle
 import android.os.Build
 import android.provider.Settings
 import android.view.WindowInsets
+import android.view.View
 import android.view.WindowInsetsController
 import android.webkit.*
 import android.widget.FrameLayout
@@ -18,6 +20,7 @@ import androidx.core.text.htmlEncode
 import kotlinx.coroutines.*
 import net.ankio.ledger.ocr.MerchantIconEncoding
 import net.ankio.ledger.BuildConfig
+import net.ankio.ledger.R
 import net.ankio.ledger.capture.ChannelSettings
 import net.ankio.ledger.capture.ImageImportState
 import net.ankio.ledger.capture.CaptureRuntime
@@ -27,6 +30,7 @@ import net.ankio.ledger.data.*
 import net.ankio.ledger.ledger
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.util.Locale
 
 /** Bundled HTML is the presentation layer; all ledger operations stay in the native local store. */
 class MainActivity : Activity() {
@@ -42,12 +46,25 @@ class MainActivity : Activity() {
     private var pendingRecordId:Long?=null
     private var pendingChannel: ChannelSettings.Channel? = null
     internal val permissionSetup by lazy { PermissionSetupController(this) }
+    internal val billReports by lazy { BillReportController(this) }
     @Volatile private var savedPageState: String? = null
     @Volatile private var previewBytes: ByteArray? = null
     private val localOrigin = "https://appassets.androidplatform.net"
 
+    override fun attachBaseContext(newBase: Context) {
+        // Native WebView date/time dialogs belong to this Chinese interface,
+        // independently of the device's chosen system language.
+        Locale.setDefault(Locale.SIMPLIFIED_CHINESE)
+        val configuration = Configuration(newBase.resources.configuration).apply {
+            setLocale(Locale.SIMPLIFIED_CHINESE)
+        }
+        super.attachBaseContext(newBase.createConfigurationContext(configuration))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.NativeControlsTheme)
         super.onCreate(savedInstanceState)
+        billReports.restore()
         pendingCaptureRepair=intent.action==net.ankio.ledger.capture.CaptureHealth.REPAIR
         pendingRecordId=savedInstanceState?.getLong("pendingRecordId",0)?.takeIf { it>0 }
             ?:intent.takeIf { it.action==OPEN_RECORD }?.getLongExtra("recordId",0)?.takeIf { it>0 }
@@ -76,7 +93,7 @@ class MainActivity : Activity() {
                     return try {
                         if (uri.path == "/capture.png") {
                             val bytes = previewBytes ?: return missing()
-                            WebResourceResponse("image/png", null, ByteArrayInputStream(bytes))
+                            WebResourceResponse("image/jpeg", null, ByteArrayInputStream(bytes))
                         } else if (uri.path?.startsWith("/task-capture/") == true) {
                             val id = Regex("^/task-capture/([1-9][0-9]*)\\.jpg$").matchEntire(uri.path!!)
                                 ?.groupValues?.get(1)?.toLongOrNull() ?: return missing()
@@ -144,10 +161,22 @@ class MainActivity : Activity() {
             WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
         outer.requestApplyInsets()
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
+        requestFeedbackPermission()
         webView.loadUrl("$localOrigin/web/index.html")
         uiScope.launch { ledger.revision.collect { refresh() } }
         uiScope.launch {
             ledger.importer.state.collect { state -> renderImportState(state) }
+        }
+    }
+
+    private fun requestFeedbackPermission() {
+        if(Build.VERSION.SDK_INT>=36 && ledger.channels.captureEnabled() &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val prompts=getSharedPreferences("notification_feedback",MODE_PRIVATE)
+            if(!prompts.getBoolean("requested",false)) {
+                prompts.edit().putBoolean("requested",true).apply()
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),17)
+            }
         }
     }
 
@@ -176,7 +205,7 @@ class MainActivity : Activity() {
                         val amount=persisted.bill.amountCents
                         if(persisted.state==RecordState.POSTED && amount!=null) {
                             ledger.captureHealth.successful(persisted.id,"image")
-                            message("已记账 ¥${net.ankio.ledger.core.Money.format(amount)}")
+                            message("已记账 ¥${net.ankio.ledger.core.Money.display(amount)}")
                         } else message("金额待核对")
                     }
                     IngestResult.DuplicateSkipped -> { dispatch("importStatus", "{\"working\":false}"); message("识别完成，请查看账本") }
@@ -198,6 +227,7 @@ class MainActivity : Activity() {
         // Capture continues in the background; rebuild the WebView only when it is visible.
         // onResume always requests a fresh snapshot, so no ledger updates are lost.
         if (!captureRestoreResumed) return
+        if(ready && !permissionSetup.active)requestFeedbackPermission()
         if (previewBytes !== ledger.importer.previewBytes) {
             previewBytes = ledger.importer.previewBytes
             if (previewBytes != null && ledger.importer.state.value == ImageImportState.Working) dispatch("preview", JSONObject().put("url", "$localOrigin/capture.png?v=${System.nanoTime()}").toString())
@@ -205,7 +235,7 @@ class MainActivity : Activity() {
         if (ready && !isDestroyed) dispatch("refresh", "null")
     }
     fun rememberPage(json: String) { savedPageState = json }
-    private fun dispatch(event: String, json: String) {
+    internal fun dispatch(event: String, json: String) {
         if (ready && !isDestroyed) webView.evaluateJavascript("window.LedgerUI&&window.LedgerUI.event(${JSONObject.quote(event)},$json)", null)
     }
     internal fun showSetup(state:JSONObject) { if(ready)dispatch("permissionSetup",state.toString()) }
@@ -223,6 +253,7 @@ class MainActivity : Activity() {
     private var captureRestoreResumed=false
     private fun restoreEnabledCapture(epoch:Int) {
         ledger.captureHealth.suspendForMissingPermission()
+        if(captureRestoreResumed && epoch==captureRestoreEpoch && ledger.captureHealth.runtimeRequested())CaptureRuntime.refreshHealth()
         if(!captureRestoreResumed || epoch!=captureRestoreEpoch || !ledger.captureHealth.runtimeRequested() || CaptureRuntime.running)return
         if(ledger.captureHealth.runtimeRequested()) {
             runCatching { CaptureRuntime.refreshHealth() }
@@ -315,7 +346,7 @@ class MainActivity : Activity() {
         sheet.dialog.setOnDismissListener { if(csvPreviewSheet===sheet)csvPreviewSheet=null }
         sheet.content.addView(sheet.text("共 ${preview.total} 笔 · 可导入 ${preview.ready} 笔",20,MintDialog.INK,true))
         sheet.content.addView(sheet.text("重复 ${preview.duplicates} 笔 · 无效 ${preview.errors.size} 笔",14,MintDialog.MUTED).apply { setPadding(0,sheet.dp(8),0,sheet.dp(8)) })
-        for(record in preview.samples)sheet.content.addView(sheet.text("${java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(java.util.Date(record.bill.occurredAt))}  ${record.bill.merchant.take(20)}  ${if(record.bill.direction==net.ankio.ledger.core.Direction.INCOME)"收入" else "支出"} ¥${net.ankio.ledger.core.Money.format(record.bill.amountCents!!)}",13,MintDialog.INK))
+        for(record in preview.samples)sheet.content.addView(sheet.text("${java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(java.util.Date(record.bill.occurredAt))}  ${record.bill.merchant.take(20)}  ${if(record.bill.direction==net.ankio.ledger.core.Direction.INCOME)"收入" else "支出"} ¥${net.ankio.ledger.core.Money.display(record.bill.amountCents!!)}",13,MintDialog.INK))
         if(preview.errors.isNotEmpty()) {
             sheet.label("以下无效行将跳过")
             preview.errors.take(4).forEach { sheet.content.addView(sheet.text("第 ${it.row} 行：${it.message}",13,MintDialog.MUTED)) }
@@ -394,9 +425,7 @@ class MainActivity : Activity() {
                 catch(_:Exception) { message("导出失败，请检查文件位置或可用空间") }
                 finally { dispatch("fileOperation", "null") }
             }
-            RESTORE_REQUEST -> AlertDialog.Builder(this).setTitle("恢复本地备份？")
-                .setMessage("将合并备份中的账单、账户、分类及识别截图。已有账单不会覆盖；采集保持暂停，系统授权需要重新确认。旧版备份可能没有截图。")
-                .setPositiveButton("恢复") { _,_ -> uiScope.launch {
+            RESTORE_REQUEST -> MintDialog.confirm(this,"恢复本地备份？","将合并备份中的账单、账户、分类及识别截图。已有账单不会覆盖；采集保持暂停，系统授权需要重新确认。旧版备份可能没有截图。","恢复") { uiScope.launch {
                     dispatch("fileOperation",JSONObject.quote("正在校验并恢复备份"))
                     try {
                         val count=withContext(Dispatchers.IO) {
@@ -410,7 +439,7 @@ class MainActivity : Activity() {
                     } catch(cancelled:CancellationException) { throw cancelled }
                     catch(_:Exception) { message("恢复失败，备份无效或已损坏，现有账单未修改") }
                     finally { dispatch("fileOperation","null") }
-                }}.setNegativeButton("取消",null).show()
+                }}
         }
     }
     fun changeChannel(key: String, enabled: Boolean) {
@@ -483,15 +512,11 @@ class MainActivity : Activity() {
         }
     }
     fun showShakeStatus() {
+        CaptureRuntime.refreshHealth()
         val state=ledger.shakeRuntime.snapshot()
         val running=state.optBoolean("running")&&state.optBoolean("accessibilityConnected")
         val sheet=MintDialog(this,"摇一摇运行状态")
-        sheet.content.addView(sheet.text(when {
-            !state.optBoolean("running") -> "摇一摇未运行"
-            !state.optBoolean("accessibilityConnected") -> "页面识别尚未连接"
-            state.optBoolean("backgroundRestricted") -> "后台运行受限"
-            else -> "运行中"
-        },20,if(running)MintDialog.GREEN else MintDialog.INK,true))
+        sheet.content.addView(sheet.text(ledger.shakeRuntime.statusMessage(),20,if(running)MintDialog.GREEN else MintDialog.INK,true))
         sheet.content.addView(sheet.text("打开单笔账单详情，摇一摇即可补录。",14,MintDialog.MUTED).apply { setPadding(0,sheet.dp(10),0,sheet.dp(16)) })
         val recent=ledger.captureHealth.snapshot()
         val successfulAt=recent.optLong("lastSuccessfulAt",0)
@@ -520,7 +545,16 @@ class MainActivity : Activity() {
         if(modelPage?.isClosing==true)modelPage?.dismiss(false)
         if(modelPage!=null)return
         val sheet=MintDialog(this,"数据与隐私","截图与账本保存在本机")
-        sheet.content.addView(sheet.text("账单、账户、分类、备注及新增、修改、删除操作均在本机完成和保存。应用不自动同步完整账本。卸载或清除应用数据会删除本机账本，请主动导出备份。\n\n自动记账、摇一摇和截图导入均在本机识别，无需配置，截图不上传。主动摇动手机或选择图片时取图识别；另外同意并开启支付自动识别后，只会检查你主动选择的应用中的前台付款成功页，先从可读取的节点确认付款成功和单笔金额，再核对当前页面后截图识别。出现输入框、密码或验证提示，或无法确认页面时直接跳过，不用截图来猜测是否成功。摇一摇也不能绕过这层检查。仅自动记录支出，不等待对方确认收款；收入请手动记账、导入截图或主动摇一摇记录。识别成功后直接记账，可在详情中编辑或删除。不会代你点击、收款或支付。识别开始即保存本地任务；识别中、成功、失败均可查看。识别截图会压缩后保存在应用私有目录，用于详情核对。账单与任务共享同一张图片。已关联账单的付款及退款截图随识别历史保留，按第 1 次、第 2 次顺序核对。未关联的成功任务截图默认保留30天，失败截图7天，并按200MiB容量预算清理；仍被账单历史或待识别任务引用的图片继续保留。清理截图不删除账单、识别历史和商户图标，缺失图片会明确提示。删除最后一个引用后释放图片。完整 ZIP 备份包含账单、识别历史、截图、商户图标、账户及分类，相同图片只保存一次；支持恢复旧版 JSON。账单 CSV 可导出全部月份的已入账收支，通用格式保留商户与订单号，也提供钱迹官方模板格式。失败识别任务不作为账单导出，也不进入完整备份。\n\n此版本不再读取短信和其他应用通知。没有显示前台结果页的后台代扣可能漏记，可打开交易详情后摇一摇补录。暂停自动识别与关闭摇一摇分别生效；撤销无障碍授权会同时停止两种截图功能。",14,MintDialog.MUTED))
+        sheet.content.addView(sheet.text("识别在本机完成，截图不上传。\n\n只检查已授权的交易页面，不读取短信或其他应用通知，不代你操作付款。\n\n自动识别与摇一摇可分别暂停。\n\n卸载或清除数据会删除账本，请先导出备份。",14,MintDialog.INK).apply { setPadding(0,0,0,sheet.dp(14)) })
+        val privacyDetails=sheet.text("账单、账户、分类、备注及新增、修改、删除操作均在本机完成和保存。应用不自动同步完整账本。卸载或清除应用数据会删除本机账本，请主动导出备份。\n\n自动记账、摇一摇和截图导入均在本机识别，无需配置，截图不上传。主动摇动手机或选择图片时取图识别；另外同意并开启支付自动识别后，只会检查你主动选择的应用中的前台付款成功页，先从可读取的节点确认付款成功和单笔金额，再核对当前页面后截图识别。出现输入框、密码或验证提示，或无法确认页面时直接跳过，不用截图来猜测是否成功。摇一摇也不能绕过这层检查。仅自动记录支出，不等待对方确认收款；收入请手动记账、导入截图或主动摇一摇记录。识别成功后直接记账，可在详情中编辑或删除。不会代你点击、收款或支付。识别开始即保存本地任务；识别中、成功、失败均可查看。识别截图会压缩后保存在应用私有目录，用于详情核对。账单与任务共享同一张图片。已关联账单的付款及退款截图随识别历史保留，按第 1 次、第 2 次顺序核对。未关联的成功任务截图默认保留30天，失败截图7天，并按${ScreenshotStore.MAX_BYTES / (1024 * 1024)}MiB容量预算清理；仍被账单历史或待识别任务引用的图片继续保留。清理截图不删除账单、识别历史和商户图标，缺失图片会明确提示。删除最后一个引用后释放图片。完整 ZIP 备份包含账单、识别历史、截图、商户图标、账户及分类，相同图片只保存一次；支持恢复旧版 JSON。账单 CSV 可导出全部月份的已入账收支，通用格式保留商户与订单号，也提供钱迹官方模板格式。失败识别任务不作为账单导出，也不进入完整备份。\n\n此版本不再读取短信和其他应用通知。没有显示前台结果页的后台代扣可能漏记，可打开交易详情后摇一摇补录。暂停自动识别与关闭摇一摇分别生效；撤销无障碍授权会同时停止两种截图功能。",14,MintDialog.MUTED).apply { visibility=View.GONE }
+        sheet.content.addView(sheet.button("查看完整说明").apply {
+            setOnClickListener {
+                val expanded=privacyDetails.visibility!=View.VISIBLE
+                privacyDetails.visibility=if(expanded)View.VISIBLE else View.GONE
+                text=if(expanded)"收起完整说明" else "查看完整说明"
+            }
+        })
+        sheet.content.addView(privacyDetails)
         var afterDismiss:(()->Unit)?=null
         sheet.fixedActions(
             sheet.button("管理截图授权").apply { setOnClickListener { afterDismiss={ changeChannel("ocr",false) };sheet.dismiss() } },
