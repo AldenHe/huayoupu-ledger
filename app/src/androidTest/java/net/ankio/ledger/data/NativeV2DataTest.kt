@@ -71,7 +71,7 @@ class NativeV2DataTest {
             db.version = 1
         }
         assertEquals(listOf(original), store.all())
-        assertEquals(8, store.readableDatabase.version)
+        assertEquals(14, store.readableDatabase.version)
         assertTrue(store.accounts().isEmpty())
         assertTrue(store.customCategories().isEmpty())
         store.readableDatabase.rawQuery("SELECT received_at FROM capture_events WHERE event_key = ?",
@@ -97,13 +97,13 @@ class NativeV2DataTest {
         store.writableDatabase.execSQL("DROP TABLE capture_images")
         store.writableDatabase.execSQL("DROP TABLE merchant_icons")
         store.writableDatabase.execSQL("DROP TABLE merchant_icon_assets")
-        store.writableDatabase.version = 2
         store.close()
+        LegacyLedgerSchemaFixture.project(context.getDatabasePath(databaseName).path,2)
         store = LedgerStore(context, databaseName)
         assertEquals(bill, store.get(bill.id))
         assertEquals(account, store.getAccount(account.id))
         assertEquals(listOf(category), store.customCategories())
-        assertEquals(8, store.readableDatabase.version)
+        assertEquals(14, store.readableDatabase.version)
         assertTrue(store.screenshotIds().isEmpty())
     }
 
@@ -120,13 +120,14 @@ class NativeV2DataTest {
         assertFalse(store.addCategory(expense))
         assertTrue(store.addCategory(income))
         val bill = store.saveEdited(record().copy(bill = record().bill.copy(category = expense.name)))
-        assertEquals(12345L, store.getAccount(edited.id)!!.amountCents)
+        val postedAccount=edited.copy(amountCents=12345L+1234L)
+        assertEquals(postedAccount, store.getAccount(edited.id))
         store.close()
         store = LedgerStore(context, databaseName)
-        assertEquals(edited, store.getAccount(edited.id))
+        assertEquals(postedAccount, store.getAccount(edited.id))
         assertEquals(setOf(expense, income), store.customCategories().toSet())
         listOf(
-            edited.copy(amountCents = -1), edited.copy(amountCents = Money.MAX_CENTS + 1),
+            edited.copy(amountCents = -Money.MAX_CENTS - 1), edited.copy(amountCents = Money.MAX_CENTS + 1),
             edited.copy(name = ""), edited.copy(name = "名".repeat(41)),
             edited.copy(description = "说".repeat(81)), edited.copy(kind = "unsupported"),
             edited.copy(uid = "not-a-uuid"), edited.copy(id = -1),
@@ -134,14 +135,14 @@ class NativeV2DataTest {
         listOf("", " ", "分类".repeat(21), " 需规范化 ").forEach { name ->
             expectFailure { store.addCategory(CustomCategory(name, Direction.EXPENSE)) }
         }
-        assertEquals(listOf(edited), store.accounts())
+        assertEquals(listOf(postedAccount), store.accounts())
         assertEquals(setOf(expense, income), store.customCategories().toSet())
         store.deleteCategory(expense)
         assertEquals(listOf(income), store.customCategories())
         assertEquals(expense.name, store.get(bill.id)!!.bill.category)
         store.deleteAccount(edited.id)
         assertNull(store.getAccount(edited.id))
-        assertEquals(listOf(bill), store.all())
+        assertEquals(listOf(bill.copy(accountUid=null,accountEffect=0)), store.all())
     }
 
     @Test fun versionTwoBackupRoundTripsEveryEntityAndRepeatedMergeKeepsLocalEdits() {
@@ -158,7 +159,7 @@ class NativeV2DataTest {
         store.addCategory(expense); store.addCategory(income)
         channels.set(ChannelSettings.Channel.OCR, true)
         val encoded = LedgerBackup.encode(store, channels)
-        assertEquals(3, JSONObject(encoded).getInt("version"))
+        assertEquals(8, JSONObject(encoded).getInt("version"))
         val backup = decode(encoded)
         assertEquals(setOf(posted.copy(id = 0), pending.copy(id = 0)), backup.records.toSet())
         assertEquals(setOf(asset.copy(id = 0), debt.copy(id = 0)), backup.accounts.toSet())
@@ -203,7 +204,7 @@ class NativeV2DataTest {
         val validV2 = JSONObject(LedgerBackup.encode(listOf(record()), channels, listOf(newAccount), listOf(newCategory)))
             .apply { getJSONObject("channels").put("ocr", false) }.toString()
         val malformed = mutableListOf<String>()
-        listOf<Any>(-1, 12.5, "100", Money.MAX_CENTS + 1).forEach { invalid ->
+        listOf<Any>(-Money.MAX_CENTS-1, 12.5, "100", Money.MAX_CENTS + 1).forEach { invalid ->
             malformed += JSONObject(validV2).apply {
                 getJSONArray("accounts").getJSONObject(0).put("amountCents", invalid)
             }.toString()

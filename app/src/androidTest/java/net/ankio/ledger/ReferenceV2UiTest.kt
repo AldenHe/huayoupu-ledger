@@ -29,11 +29,11 @@ class ReferenceV2UiTest {
                 val web = WebUiProbe(scenario)
                 web.ready()
                 web.run("document.querySelector('[aria-label=\"添加记账\"]').click()")
-                web.await("document.querySelector('#manual').classList.contains('mobile-active')")
+                web.await("manualOpen && !document.querySelector('#manual-panel').hidden")
                 web.run("document.querySelector('#manual-type [data-type=\"expense\"]').click();document.querySelector('#category-grid [data-category=\"交通\"]').click();document.querySelector('#manual-amount').value='12.34';document.querySelector('#manual-note').value=${quote(prefix + " 支出")};document.querySelector('#manual-note').dispatchEvent(new Event('input',{bubbles:true}))")
                 scenario.recreate()
                 web.ready()
-                web.await("document.querySelector('#manual').classList.contains('mobile-active') && document.querySelector('#manual-amount').value==='12.34' && document.querySelector('#manual-note').value===${quote(prefix + " 支出")} && document.querySelector('#category-grid [data-category=\"交通\"]').classList.contains('active')")
+                web.await("manualOpen && !document.querySelector('#manual-panel').hidden && document.querySelector('#manual-amount').value==='12.34' && document.querySelector('#manual-note').value===${quote(prefix + " 支出")} && document.querySelector('#category-grid [data-category=\"交通\"]').classList.contains('active')")
                 web.run("document.querySelector('#manual-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
                 web.await("document.querySelector('#ledger').classList.contains('mobile-active') && JSON.parse(LedgerNative.snapshot()).records.some(r=>r.note===${quote(prefix + " 支出")}&&r.amountCents===1234&&r.direction==='EXPENSE'&&r.category==='交通'&&r.source==='MANUAL')")
                 web.run("document.querySelector('[aria-label=\"添加记账\"]').click();document.querySelector('#manual-type [data-type=\"income\"]').click();document.querySelector('#manual-amount').value='56.78';document.querySelector('#manual-note').value=${quote(prefix + " 收入")};document.querySelector('#manual-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
@@ -122,9 +122,10 @@ class ReferenceV2UiTest {
                 val account = snapshotItems(web, "accounts").single { it.getString("name") == prefix }
                 val id = account.getLong("id")
                 web.await("document.querySelector('[data-account=\"$id\"]').textContent.includes('88.88')")
-                web.run("document.querySelector('[data-account=\"$id\"]').click()")
+                web.run("document.querySelector('[data-account=\"$id\"]').click();document.querySelector('#account-calibrate').click()")
                 fillAccount(web, prefix, "11.11", "LIABILITY")
                 web.await("JSON.parse(LedgerNative.snapshot()).accounts.some(a=>a.id===$id&&a.amountCents===1111&&a.type==='LIABILITY')")
+                web.run("go('assets')")
                 val all = snapshotItems(web, "accounts")
                 val expected = all.sumOf { if(it.getString("type")=="LIABILITY") -it.getLong("amountCents") else it.getLong("amountCents") }
                 web.await("document.querySelector('#net-amount').textContent.includes(${quote(money(expected))})")
@@ -133,11 +134,11 @@ class ReferenceV2UiTest {
                 scenario.recreate()
                 web.ready()
                 web.await("document.querySelector('#assets').classList.contains('mobile-active') && document.querySelector('#net-amount').textContent.includes('****') && document.querySelector('[data-account=\"$id\"]')")
-                web.run("document.querySelector('#hide-assets').click();document.querySelector('[data-account=\"$id\"]').click()")
+                web.run("document.querySelector('#hide-assets').click();document.querySelector('[data-account=\"$id\"]').click();document.querySelector('#account-calibrate').click()")
                 web.await("document.querySelector('#account-name').value===${quote(prefix)} && document.querySelector('#account-amount').value==='11.11' && document.querySelector('#account-type').value==='LIABILITY'")
-                web.run("document.querySelector('#delete-account').click()")
-                web.await("!document.querySelector('[data-account=\"$id\"]') || document.querySelector('#confirm-delete-account')")
-                web.run("document.querySelector('#confirm-delete-account')?.click()")
+                web.run("closeSheet(false);document.querySelector('#account-overflow').click();document.querySelector('#account-delete-action').click()")
+                web.await("!document.querySelector('[data-account=\"$id\"]') || document.querySelector('#account-delete-confirm')")
+                web.run("document.querySelector('#account-delete-confirm')?.click()")
                 web.await("!JSON.parse(LedgerNative.snapshot()).accounts.some(a=>a.id===$id) && !document.querySelector('[data-account=\"$id\"]')")
                 scenario.recreate()
                 web.ready()
@@ -149,7 +150,7 @@ class ReferenceV2UiTest {
     }
 
     private fun fillAccount(web: WebUiProbe, name: String, amount: String, type: String) {
-        web.run("document.querySelector('#account-name').value=${quote(name)};document.querySelector('#account-description').value='合成测试账户';document.querySelector('#account-amount').value=${quote(amount)};document.querySelector('#account-type').value=${quote(type)};document.querySelector('#account-kind').value='custom';document.querySelector('#save-account').click()")
+        web.run("document.querySelector('#account-name').value=${quote(name)};document.querySelector('#account-description').value='合成测试账户';document.querySelector('#account-amount').value=${quote(amount)};document.querySelector('#account-kind').value='bank';document.querySelector('#account-kind').dispatchEvent(new Event('change'));document.querySelector('#account-type').value=${quote(type)};document.querySelector('#save-account').click()")
     }
 
     private fun snapshotItems(web: WebUiProbe, key: String): List<JSONObject> {

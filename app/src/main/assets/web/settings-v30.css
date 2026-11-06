@@ -20,16 +20,16 @@
 #settings .payment-app .switch:before{inset:-11px -2px}
 #settings .payment-settings .payment-note{font-size:11px;color:#718096;margin:9px 0 0;padding-left:14px;position:relative;line-height:1.6}
 #settings .payment-note:before{content:'ⓘ';position:absolute;left:0;color:#7f9bb7}
-#settings>.shake{flex:1.15 0 260px;min-height:260px;display:flex;flex-direction:column;margin:0;padding:22px 12px 13px;border-radius:20px;background:linear-gradient(130deg,#e2f0ff,#e6efff 65%,#e7f6ff)}
-#settings .shake h2{font-size:22px;line-height:1.4;margin:0 0 10px;max-width:77%;gap:12px;position:relative;z-index:1}
-#settings .shake>p{font-size:12px;line-height:1.8;margin:0 0 16px;max-width:74%;color:#647f9d}
-#settings .shake-illustration{width:120px;height:110px;right:4px;top:7px}
+#settings>.shake{flex:0 0 auto;min-height:0;height:auto;display:flex;flex-direction:column;margin:0;padding:16px 12px 8px;border-radius:20px;background:linear-gradient(130deg,#e2f0ff,#e6efff 65%,#e7f6ff)}
+#settings .shake h2{font-size:20px;line-height:1.4;margin:0 0 6px;max-width:77%;gap:12px;position:relative;z-index:1}
+#settings .shake>p{font-size:12px;line-height:1.8;margin:0 0 8px;max-width:calc(100% - 86px);color:#647f9d}
+#settings .shake-illustration{width:84px;height:80px;right:6px;top:8px}
 #settings .shake .switch{width:47px;height:29px;flex:none}
 #settings .shake .switch:after{width:23px;height:23px}
 #settings .shake .switch[aria-checked=true]:after{transform:translateX(18px)}
-#settings .shake .steps{flex:none;margin-top:12px;padding:12px 3px;background:#ffffff80;border-radius:14px}
+#settings .shake .steps{flex:none;margin-top:4px;padding:8px 3px;background:#ffffff80;border-radius:14px}
 #settings .step{font-size:12px;line-height:1.6;color:#4a6384;min-width:0;padding:0 2px}
-#settings .step b{width:30px;height:30px;font-size:18px;margin-bottom:7px}
+#settings .step b{width:22px;height:22px;font-size:14px;margin-bottom:4px}
 #settings .shake-runtime{flex:none;min-height:35px;margin:7px 0 -4px;padding:5px;color:#617e9d;font-size:11px;border:0;background:none}
 #settings .shake-runtime .permission:before{content:'ⓘ ';color:#839fbd}
 #settings .account-preferences{flex:.8 0 159px;display:flex;flex-direction:column;margin:0;padding:0 16px;overflow:visible}
@@ -41,9 +41,9 @@
 #settings .account-preferences .chevron{color:#8297a8;margin-left:auto;font-size:20px}
 #settings .account-preferences #engine-provider+.chevron{margin-left:0}
 #settings .about-app{flex:none;margin:-5px 0 -7px;min-height:36px;font-size:11px;color:#718096;padding:7px;align-self:center}
-@media(max-height:780px){.native-app #settings.mobile-active{gap:10px;padding:16px 14px 88px}#settings .payment-settings{padding:13px}#settings .payment-app{padding:9px 7px}#settings>.shake{flex-basis:230px;min-height:230px;padding:16px 10px 9px}#settings .shake h2{font-size:20px;margin-bottom:7px}#settings .shake>p{margin-bottom:10px;font-size:11px}#settings .shake .steps{padding:8px 2px}#settings .step{font-size:11px}#settings .step b{width:26px;height:26px;margin-bottom:4px;font-size:16px}#settings .shake-runtime{margin-top:3px;min-height:32px}#settings .account-preferences{flex-basis:150px}#settings .account-preferences>button{padding:9px 0;min-height:50px}}
-@media(max-width:360px){#settings .payment-app{gap:5px;font-size:12px;padding-left:6px;padding-right:6px}#settings .payment-logo{width:27px;height:27px;flex-basis:27px}#settings .payment-logo.wechat svg{width:25px;height:25px}#settings .payment-logo.payment-alipay{font-size:18px}#settings .payment-app .switch{width:38px;height:24px}#settings .payment-app .switch:after{width:18px;height:18px}#settings .payment-app .switch[aria-checked=true]:after{transform:translateX(14px)}#settings .shake-illustration{width:99px;height:94px}#settings .shake h2{font-size:19px;gap:8px}}
-.large-text #settings .payment-apps{flex-direction:column}.large-text #settings>.shake{flex-basis:auto;min-height:265px}.large-text #settings .shake-illustration{opacity:.45}.large-text #settings .shake>p{max-width:80%}.large-text #settings .account-preferences #engine-provider{max-width:40%}
+@media(max-height:780px){.native-app #settings.mobile-active{gap:10px;padding:16px 14px 88px}#settings .payment-settings{padding:13px}#settings .payment-app{padding:9px 7px}#settings>.shake{padding:16px 10px 9px}#settings .shake h2{font-size:20px;margin-bottom:7px}#settings .shake>p{margin-bottom:10px;font-size:11px}#settings .shake .steps{padding:8px 2px}#settings .step{font-size:11px}#settings .step b{width:22px;height:22px;margin-bottom:4px;font-size:14px}#settings .shake-runtime{margin-top:3px;min-height:32px}#settings .account-preferences{flex-basis:150px}#settings .account-preferences>button{padding:9px 0;min-height:50px}}
+@media(max-width:360px){#settings .payment-app{gap:5px;font-size:12px;padding-left:6px;padding-right:6px}#settings .payment-logo{width:27px;height:27px;flex-basis:27px}#settings .payment-logo.wechat svg{width:25px;height:25px}#settings .payment-logo.payment-alipay{font-size:18px}#settings .payment-app .switch{width:38px;height:24px}#settings .payment-app .switch:after{width:18px;height:18px}#settings .payment-app .switch[aria-checked=true]:after{transform:translateX(14px)}#settings .shake-illustration{width:78px;height:74px}#settings .shake h2{font-size:19px;gap:8px}}
+.large-text #settings .payment-apps{flex-direction:column}.large-text #settings>.shake{flex-basis:auto;}.large-text #settings .shake-illustration{opacity:.45}.large-text #settings .shake>p{max-width:100%}.large-text #settings .shake-illustration{display:none}.large-text #settings .account-preferences #engine-provider{max-width:40%}
 @media(orientation:landscape){.native-app #settings.mobile-active{max-width:650px}#settings>.shake{flex-grow:0}#settings .account-preferences{flex-grow:0}}
 @media(prefers-reduced-motion:reduce){#settings .switch:after{transition:none}}
 /* Fit the full page above navigation on regular phones; keep scrolling on smaller displays. */
@@ -54,12 +54,12 @@
 #settings .payment-app{padding:10px 9px}
 #settings .payment-settings>p{margin-bottom:8px}
 #settings .payment-settings .payment-note{margin:7px 0 0}
-#settings>.shake{min-height:245px;flex-basis:245px}
+#settings>.shake{}
 #settings .account-preferences{flex-basis:150px}
 #settings .account-preferences>button{min-height:50px}
 #settings .about-app{min-height:32px}
-@media(max-height:780px){.native-app #settings.mobile-active{gap:8px;padding:14px 14px 88px}#settings .payment-settings{padding:12px}#settings .payment-app{padding:8px 7px}#settings>.shake{flex-basis:216px;min-height:216px;padding:14px 10px 7px}#settings .shake-illustration{width:106px;height:98px}#settings .shake>p{line-height:1.65;margin-bottom:8px}#settings .account-preferences{flex-basis:144px}#settings .account-preferences>button{min-height:48px}#settings .about-app{margin:-3px 0 -6px}}
-@media(max-height:700px){#settings>.shake{flex-basis:216px;flex-grow:0}#settings .account-preferences{flex-grow:0}}
+@media(max-height:780px){.native-app #settings.mobile-active{gap:8px;padding:14px 14px 88px}#settings .payment-settings{padding:12px}#settings .payment-app{padding:8px 7px}#settings>.shake{padding:14px 10px 7px}#settings .shake-illustration{width:84px;height:80px}#settings .shake>p{line-height:1.65;margin-bottom:8px}#settings .account-preferences{flex-basis:144px}#settings .account-preferences>button{min-height:48px}#settings .about-app{margin:-3px 0 -6px}}
+@media(max-height:700px){#settings>.shake{flex-grow:0}#settings .account-preferences{flex-grow:0}}
 /* Android 11 WebView lacks flex gap. Use explicit spacing for the new settings layout. */
 .native-app #settings.mobile-active{gap:0}
 #settings>.payment-settings,#settings>.shake,#settings>.account-preferences{margin-top:10px}
@@ -87,7 +87,7 @@
 /* Content sets card height: text zoom and wrapped runtime messages must never be clipped. */
 #settings>.shake{height:auto;flex:0 0 auto}
 #settings .shake h2,#settings .shake>p{flex:none}
-#settings .shake-runtime{flex:none;min-height:44px;margin:8px 0 0;padding:8px 4px;line-height:1.5}
+#settings .shake-runtime{flex:none;min-height:48px;margin:4px 0 0;padding:8px 4px;line-height:1.5}
 #settings .shake-runtime .permission{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
 #settings .shake-runtime .chevron{flex:none;margin-left:8px}
 /* The preferences card contains two compact rows, rather than three stretched rows. */
@@ -99,7 +99,7 @@
  #settings .payment-settings{padding:10px}
  #settings .payment-settings>p{margin-bottom:6px}
  #settings .payment-settings .payment-note{margin-top:5px}
- #settings>.shake{min-height:200px;padding:10px 10px 6px}
+ #settings>.shake{padding:10px 10px 6px}
  #settings .shake h2{margin-bottom:4px}
  #settings .shake>p{margin-bottom:4px}
  #settings .shake .steps{padding:4px 2px}
@@ -114,4 +114,4 @@
  #settings .shake>p{margin-bottom:2px}
 }
 
-@media(max-width:360px){#settings .shake>p,.large-text #settings .shake>p{max-width:calc(100% - 108px)}}
+@media(max-width:360px){#settings .shake>p,.large-text #settings .shake>p{max-width:calc(100% - 80px)}}

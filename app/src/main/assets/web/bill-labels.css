@@ -1,0 +1,41 @@
+.bill-labels-editor{display:flex;align-items:center;gap:16px;margin:16px 0;font-size:14px;color:#42566a}
+.bill-labels-editor>span{flex:none}
+.bill-labels-editor>button{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;min-width:0;flex:1;padding:10px 12px;border:1px solid #c5d2d8;border-radius:12px;text-align:left;color:#294d40;background:#fff;font:inherit}
+#bill-labels-value{overflow-wrap:anywhere}
+.bill-label-badge{display:inline-block;max-width:72px;overflow:hidden;vertical-align:bottom;text-overflow:ellipsis;white-space:nowrap;margin-left:5px;color:#775014;background:#fff1d6;border-radius:5px;padding:2px 5px;font-size:10px;line-height:1.4}
+.label-help{font-size:13px;line-height:1.65;color:#455a52;margin:8px 0 16px}
+.label-options{display:flex;flex-wrap:wrap;margin:-4px}
+.label-options>button{font:inherit;min-height:48px;padding:10px 14px;margin:4px;border:1px solid #c1d2ca;border-radius:12px;color:#425b50;background:#fff;max-width:100%;overflow-wrap:anywhere}
+.label-options>button[aria-pressed=true]{background:#def2e9;border-color:#4b8973;color:#185b43}
+.new-label-form{margin-top:24px}
+.new-label-form>label{display:block;margin-bottom:8px;font-size:14px;color:#314e40}
+.new-label-form>div{display:flex;gap:8px}
+.new-label-form input{flex:1;min-width:0;background:#fff;border:1px solid #b6c9bf;border-radius:12px;padding:12px;font:inherit;color:#243e31;caret-color:var(--green)}
+.new-label-form input::placeholder{color:#5d6e64}
+.new-label-form button{min-height:48px;min-width:64px;border-radius:12px;padding:10px;background:#e2f2e9;color:#255940;font:inherit}
+#label-error{min-height:20px;color:#a23246;font-size:13px;line-height:1.5}
+.bill-labels-editor button:focus-visible,.label-options button:focus-visible,.new-label-form input:focus-visible,.new-label-form button:focus-visible{outline:2px solid #276c51;outline-offset:3px}
+.bill-reimbursement-editor{display:flex;align-items:center;justify-content:space-between;gap:16px;color:#334e3c;font-size:14px}
+.bill-reimbursement-editor{margin:18px 0 12px}
+.reimbursement-segment{display:flex;align-items:stretch;min-height:44px;padding:3px;background:#e6ece8;border-radius:12px}
+.reimbursement-segment>button{min-height:40px;padding:9px 14px;background:transparent;border-radius:9px;color:#4a6354;font:inherit;font-size:12px;line-height:1.5;transition:background-color 160ms ease,box-shadow 160ms ease}
+.reimbursement-segment>button[aria-pressed=true]{background:#fff;color:#225039;box-shadow:0 2px 5px #263c2821;font-weight:600}
+.reimbursement-segment>button:focus-visible{outline:2px solid #276c51;outline-offset:3px}
+.stats-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:0 0 20px}
+.stats-controls #stats-type{margin:0;padding:4px;border-radius:14px;min-width:0}
+.stats-controls #stats-type button{min-width:0;min-height:40px;padding:8px;font-size:13px;border-radius:10px}
+.stats-reimbursement{position:relative;min-width:0;color:#315d50;font-size:12px}
+.stats-reimbursement summary{display:flex;align-items:center;justify-content:center;min-height:48px;padding:10px 12px;border-radius:14px;background:#e6f0eb;cursor:pointer;list-style:none}
+.stats-reimbursement summary::-webkit-details-marker{display:none}
+.stats-reimbursement summary>i{font-size:10px;margin-left:8px}
+.stats-reimbursement[open] summary{background:#d8eae1}
+.stats-reimbursement[open] summary>i{transform:rotate(180deg)}
+.stats-reimbursement-options{position:absolute;top:calc(100% + 8px);right:0;width:max-content;min-width:168px;max-width:calc(100vw - 32px);padding:6px;background:#fff;border-radius:14px;box-shadow:0 6px 24px #294d4033;z-index:4}
+.stats-reimbursement-options>button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;padding:10px 12px;border-radius:10px;background:transparent;color:#3c5b4d;font:inherit;font-size:13px;text-align:left}
+.stats-reimbursement-options>button>i{visibility:hidden;font-size:11px;margin-left:16px}
+.stats-reimbursement-options>button[aria-pressed=true]{background:#e2f0e8;color:#205a41}
+.stats-reimbursement-options>button[aria-pressed=true]>i{visibility:visible}
+.stats-reimbursement summary:focus-visible,.stats-reimbursement-options>button:focus-visible{outline:2px solid #276c51;outline-offset:3px}
+.large-text .stats-controls{grid-template-columns:1fr;gap:8px}.large-text .stats-reimbursement{justify-self:end}
+@media(prefers-reduced-motion:reduce){.reimbursement-segment>button{transition:none}}
+@media(max-width:360px){.reimbursement-segment>button{padding-left:10px;padding-right:10px}}

@@ -6,6 +6,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LocalOcrBillParserTest {
+    @Test fun explicitPendingReceiptIsSkippedButImmediateOutgoingSuccessStillPosts() {
+        val lines=listOf(LocalOcrLine("转账成功"),LocalOcrLine("待测试收款人确认收款"),LocalOcrLine("转账金额：¥0.01"),LocalOcrLine("转账时间：2026-11-05 15:06:00"))
+        assertNull(LocalOcrBillParser.parse(lines,0,0,now,origin=PaymentApps.WECHAT))
+        val automatic=LocalOcrBillParser.parse(lines,0,0,now,expenseOnly=true,origin=PaymentApps.WECHAT)
+        assertNotNull(automatic);assertEquals(Direction.EXPENSE,automatic!!.direction);assertEquals(1L,automatic.amountCents)
+        assertNotNull(LocalOcrBillParser.parse(lines.filterNot {it.text.startsWith("待")},0,0,now,origin=PaymentApps.WECHAT))
+    }
     @Test fun closedShoppingOrderNeverCreatesARefundReviewDraft() {
         for(status in listOf("交易关闭", "订单已关闭", "订单已取消")) {
             assertNull(status,parse(status,"店铺名称：合成旗舰店","实付价¥14.90",
@@ -220,7 +227,7 @@ class LocalOcrBillParserTest {
             assertNull(status, parse("支付成功", "付款金额：88.00元", "商户名称：合成商户", status, live = true))
         }
         assertNull(parse("商品详情", "订单金额：88.00元", "去付款"))
-        assertEquals(8800L,parse("待对方收款", "转账金额：88.00元")!!.amountCents)
+        assertNull(parse("待对方收款", "转账金额：88.00元"))
     }
 
     @Test fun successfulOutgoingTransferDoesNotWaitForRecipientConfirmation() {

@@ -10,10 +10,14 @@ import net.ankio.ledger.core.ParsedBill
 import net.ankio.ledger.core.RecordState
 import net.ankio.ledger.core.Source
 import net.ankio.ledger.core.PaymentApps
+import net.ankio.ledger.data.BillTags
 import net.ankio.ledger.data.LedgerRecord
 import net.ankio.ledger.data.LedgerAccount
 import net.ankio.ledger.data.AccountType
 import net.ankio.ledger.data.AccountBanks
+import net.ankio.ledger.data.AccountTransfers
+import net.ankio.ledger.data.AccountTransfer
+import net.ankio.ledger.data.AccountDetailReadView
 import net.ankio.ledger.data.CustomCategory
 import net.ankio.ledger.data.LedgerReadView
 import net.ankio.ledger.data.paymentProvider
@@ -29,6 +33,17 @@ class LedgerWebBridge(private val activity: MainActivity) {
 
     @JavascriptInterface
     fun snapshot(): String = buildSnapshot().toString()
+
+    @JavascriptInterface
+    fun setMonthlyBudget(amount: String): String = try {
+        val cents = if (amount.isEmpty()) 0L else Money.parseCents(amount)
+            ?.takeIf { it > 0 } ?: throw IllegalArgumentException("请输入大于零、最多两位小数的月限额")
+        app.monthlyBudget.set(cents)
+        app.changed()
+        JSONObject().put("ok", true).put("monthlyBudgetCents", cents).toString()
+    } catch (error: Exception) {
+        failure(error.message ?: "月限额保存失败，请重试").toString()
+    }
 
     /** Production list entry: exactly one bounded page, with a revision for continuation. */
     @JavascriptInterface
@@ -118,7 +133,7 @@ class LedgerWebBridge(private val activity: MainActivity) {
                 put("uid", record.uid)
                 put("merchant", record.bill.merchant)
                 put("category", record.bill.category)
-                put("note", record.note)
+                put("note", record.note);put("tags",JSONArray(BillTags.encode(record.tags)));put("requiresReimbursement",record.requiresReimbursement);put("accountUid",record.accountUid?:JSONObject.NULL)
                 put("amountCents", record.bill.amountCents ?: JSONObject.NULL)
                 put("direction", record.bill.direction?.name ?: JSONObject.NULL)
                 put("occurredAt", record.bill.occurredAt)
@@ -153,10 +168,16 @@ class LedgerWebBridge(private val activity: MainActivity) {
             channels.put(channel.key, state)
         }
         val accounts = JSONArray()
+        val defaultAccountUid=app.store.defaultAccount()?.uid
+        val channelDefaults=app.store.channelDefaultAccounts()
         app.store.accounts().forEach { account ->
             accounts.put(JSONObject().put("id", account.id).put("uid", account.uid)
                 .put("name", account.name).put("description", account.description)
-                .put("amountCents", account.amountCents).put("kind", account.kind).put("type", account.type.name))
+                .put("amountCents", account.amountCents).put("kind", account.kind).put("type", account.type.name)
+                .put("includedInAssets",account.includedInAssets)
+                .put("isDefault",defaultAccountUid==account.uid)
+                .put("isWechatDefault",channelDefaults["wechat"]==account.uid)
+                .put("isAlipayDefault",channelDefaults["alipay"]==account.uid))
         }
         val custom = JSONObject()
         val categories = app.store.customCategories()
@@ -187,6 +208,7 @@ class LedgerWebBridge(private val activity: MainActivity) {
             .put("wechatAutoConsented",app.channels.wechatAutoConsented())
             .put("automatic",JSONObject().put("enabled",app.channels.automaticEnabled()).put("applications",applications))
             .put("screenshotStorage",app.screenshots.stats())
+            .put("monthlyBudgetCents",app.monthlyBudget.cents())
             .put("status", app.channels.lastStatus())
     } catch (_: Exception) {
         // An explicit error avoids making a failed read look like an empty ledger.
@@ -206,7 +228,8 @@ class LedgerWebBridge(private val activity: MainActivity) {
             .put("captureMode",if(task?.optString("origin")?.startsWith("payment_auto:")==true)"page" else "")
             .put("refundCandidateCount",if(record.bill.refund!=null&&record.state==RecordState.REVIEW)app.store.refundCandidates(id).size else 0)
             .put("merchant",record.bill.merchant).put("category",record.bill.category)
-            .put("note",record.note).put("amountCents",record.bill.amountCents?:JSONObject.NULL).put("direction",record.bill.direction?.name?:JSONObject.NULL)
+            .put("requiresReimbursement",record.requiresReimbursement).put("accountUid",record.accountUid?:JSONObject.NULL)
+            .put("tags",JSONArray(BillTags.encode(record.tags))).put("note",record.note).put("amountCents",record.bill.amountCents?:JSONObject.NULL).put("direction",record.bill.direction?.name?:JSONObject.NULL)
             .put("occurredAt",record.bill.occurredAt).put("state",record.state.name).put("source",record.capture.source.name)
             .put("paymentProvider",paymentProvider(record.capture)?:JSONObject.NULL)
             .put("refund",record.bill.refund?.let { JSONObject().put("provider",it.provider).put("originalAmountCents",it.originalAmountCents).put("refundedCents",it.refundedCents).put("mode",it.mode).put("refundId",it.refundId?:JSONObject.NULL) }?:JSONObject.NULL))
@@ -219,6 +242,23 @@ class LedgerWebBridge(private val activity: MainActivity) {
             }
         }).toString()
     } catch(_:Exception) { failure("账单详情读取失败，请重试").toString() }
+
+    @JavascriptInterface
+    fun billLabels():String = try {
+        JSONObject().put("ok",true).put("tags",JSONArray(net.ankio.ledger.data.BillReports(app.store).labels())).toString()
+    } catch(_:Exception) { failure("标签读取失败，请重试").toString() }
+
+    @JavascriptInterface
+    fun generateBillReport(criteria:String,requestId:String)=onMain { activity.billReports.generate(criteria,requestId) }
+
+    @JavascriptInterface
+    fun billReportPage(token:String,offset:Int):String=activity.billReports.page(token,offset)
+
+    @JavascriptInterface
+    fun exportBillReport(token:String,format:String)=onMain { activity.billReports.export(token,format) }
+
+    @JavascriptInterface
+    fun reportReduceMotion():Boolean=android.provider.Settings.Global.getFloat(activity.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f
 
     @JavascriptInterface
     fun exportBills(format:String) {
@@ -234,6 +274,20 @@ class LedgerWebBridge(private val activity: MainActivity) {
         checkInput(category.length<=1024,"分类无效")
         LedgerReadView(app.store).records(month,offset=offset,direction=direction,category=category).put("ok",true).toString()
     } catch(_:Exception) { failure("明细读取失败").toString() }
+
+    @JavascriptInterface
+    fun statistics(month:String,reimbursement:String):String = try {
+        synchronized(app.store) {
+            JSONObject().put("ok",true).put("summary",LedgerReadView(app.store).summary(month,reimbursement))
+                .put("revision",app.revision.value.toString()).toString()
+        }
+    } catch(_:Exception) { failure("统计读取失败，请重试").toString() }
+
+    @JavascriptInterface
+    fun statisticsRecords(month:String,category:String,direction:String,offset:Int,reimbursement:String):String = try {
+        checkInput(category.length<=1024,"分类无效")
+        LedgerReadView(app.store).records(month,offset=offset,direction=direction,category=category,reimbursement=reimbursement,statistical=true).put("ok",true).toString()
+    } catch(_:Exception) { failure("明细读取失败，请重试").toString() }
 
     @JavascriptInterface
     fun save(json: String): String = try {
@@ -288,7 +342,12 @@ class LedgerWebBridge(private val activity: MainActivity) {
                     bill = base.bill.copy(amountCents = cents, direction = direction,
                         merchant = merchant, category = category, occurredAt = occurredAt,
                         reliable = true, reason = "", timeExplicit = if(original!=null && occurredAt==base.bill.occurredAt)base.bill.timeExplicit else true),
-                    note = note))
+                    note = note, tags = if(input.has("tags"))BillTags.decode(input.getJSONArray("tags").toString()) else base.tags,
+                    requiresReimbursement=if(input.has("requiresReimbursement")) {
+                        val value=input.get("requiresReimbursement");checkInput(value is Boolean,"报销属性无效");value as Boolean
+                    } else base.requiresReimbursement),
+                    selectedAccountUid=if(input.has("accountUid")&&!input.isNull("accountUid"))string(input,"accountUid",36) else null,
+                    accountSelectionSpecified=input.has("accountUid"))
                 if(taskId>0) {
                     app.tasks.image(taskId)?.let { app.store.attachScreenshot(saved.id,it) }
                     app.tasks.update(taskId,"SUCCEEDED","已手动补录账单",saved.id)
@@ -302,6 +361,8 @@ class LedgerWebBridge(private val activity: MainActivity) {
         failure(error.message ?: "账单数据无效").toString()
     } catch (_: JSONException) {
         failure("账单数据格式错误").toString()
+    } catch (error: IllegalArgumentException) {
+        failure(error.message ?: "账单数据无效").toString()
     } catch (_: Exception) {
         failure("保存失败，内容已保留，请重试").toString()
     }
@@ -371,13 +432,17 @@ class LedgerWebBridge(private val activity: MainActivity) {
     fun saveAccount(json: String): String = try {
         checkInput(json.length <= MAX_INPUT_LENGTH, "账户数据过大")
         val input = JSONObject(json)
+        listOf("isDefault","isWechatDefault","isAlipayDefault","includedInAssets").forEach { key ->
+            if(input.has(key))checkInput(input.get(key) is Boolean,"默认账户设置无效")
+        }
         val id = integer(input, "id", 0, MAX_SAFE_INTEGER)
         val enteredName = string(input, "name", 40).trim()
         val description = if (input.has("description")) string(input, "description", 80).trim() else ""
         val amount = string(input, "amount", 32).trim()
         checkInput(amount.isNotEmpty(), "请输入余额，可填 0")
-        checkInput(DECIMAL.matches(amount), "余额需为零或正数，最多两位小数")
-        val cents = Money.parseCents(amount) ?: throw InvalidInput("账户余额无效或过大")
+        checkInput(Regex("-?\\d+(?:\\.\\d{1,2})?").matches(amount), "余额最多两位小数")
+        val magnitude=Money.parseCents(amount.removePrefix("-"))
+        val cents = magnitude?.let { if(amount.startsWith("-"))-it else it } ?: throw InvalidInput("账户余额无效或过大")
         val kind = string(input, "kind", 16)
         checkInput(kind in LedgerAccount.KINDS, "账户图标类型无效")
         val name=enteredName.ifBlank { AccountBanks.entries.firstOrNull { it.kind==kind }?.label ?: when(kind) {
@@ -391,8 +456,23 @@ class LedgerWebBridge(private val activity: MainActivity) {
         val saved = synchronized(app.store) {
             val original = if (id == 0L) null else (app.store.getAccount(id)
                 ?: throw InvalidInput("账户已不存在，请刷新后重试"))
-            app.store.saveAccount((original ?: LedgerAccount(name = name, amountCents = cents)).copy(
-                name = name, description = description, amountCents = cents, kind = kind, type = type))
+            val db=app.store.writableDatabase;db.beginTransaction()
+            try {
+                val account=app.store.saveAccount((original ?: LedgerAccount(name = name, amountCents = cents)).copy(
+                    name = name, description = description, amountCents = cents, kind = kind, type = type,
+                    includedInAssets=if(input.has("includedInAssets"))input.getBoolean("includedInAssets") else original?.includedInAssets?:true))
+                if(input.has("isDefault")) {
+                    if(input.getBoolean("isDefault"))app.store.setDefaultAccount(account.uid)
+                }
+                val channelDefaults=app.store.channelDefaultAccounts()
+                listOf("wechat" to "isWechatDefault","alipay" to "isAlipayDefault").forEach { (channel,key) ->
+                    if(input.has(key)) {
+                        if(input.getBoolean(key))app.store.setChannelDefaultAccount(channel,account.uid)
+                        else if(channelDefaults[channel]==account.uid)app.store.setChannelDefaultAccount(channel,null)
+                    }
+                }
+                db.setTransactionSuccessful();account
+            } finally { db.endTransaction() }
         }
         app.changed()
         JSONObject().put("ok", true).put("id", saved.id).toString()
@@ -400,9 +480,63 @@ class LedgerWebBridge(private val activity: MainActivity) {
         failure(error.message ?: "账户数据无效").toString()
     } catch (_: JSONException) {
         failure("账户数据格式错误").toString()
+    } catch (error: IllegalArgumentException) {
+        failure(error.message?:"账户数据无效").toString()
     } catch (_: Exception) {
         failure("账户保存失败，内容已保留，请重试").toString()
     }
+
+    @JavascriptInterface
+    fun setDefaultAccount(uid:String):String = try {
+        checkInput(uid.length==36,"账户标识无效")
+        app.store.setDefaultAccount(uid);app.changed();JSONObject().put("ok",true).toString()
+    } catch(error:Exception) { failure(error.message?:"默认账户设置失败").toString() }
+
+    @JavascriptInterface
+    fun setAccountPreference(channel:String,uid:String):String=try {
+        checkInput(uid.isEmpty()||uid.length==36,"账户标识无效")
+        synchronized(app.store) {
+            when(channel) {
+                "common"->{checkInput(uid.isNotEmpty(),"请选择通用默认账户");app.store.setDefaultAccount(uid)}
+                "wechat","alipay"->app.store.setChannelDefaultAccount(channel,uid.takeIf { it.isNotEmpty() })
+                else->throw InvalidInput("支付渠道无效")
+            }
+        }
+        app.changed();JSONObject().put("ok",true).toString()
+    }catch(error:Exception){failure(error.message?:"默认账户设置失败").toString()}
+
+    @JavascriptInterface
+    fun accountDetails(uid:String,month:String,filter:String,offset:Int):String=try {
+        checkInput(uid.length==36,"账户标识无效")
+        AccountDetailReadView(app.store).query(uid,month,filter,offset).put("ok",true).toString()
+    }catch(error:Exception){failure(error.message?:"账户明细读取失败，请重试").toString()}
+
+    private fun transferJson(value:AccountTransfer)=JSONObject().put("uid",value.uid).put("fromUid",value.fromUid)
+        .put("toUid",value.toUid).put("amountCents",value.amountCents).put("occurredAt",value.occurredAt).put("note",value.note)
+
+    @JavascriptInterface
+    fun transferDetails(uid:String):String=try {
+        checkInput(uid.length==36,"转账标识无效")
+        JSONObject().put("ok",true).put("transfer",transferJson(requireNotNull(AccountTransfers(app.store).get(uid)){"转账记录已不存在"})).toString()
+    }catch(error:Exception){failure(error.message?:"转账读取失败").toString()}
+
+    @JavascriptInterface
+    fun saveTransfer(json:String):String=try {
+        checkInput(json.length<=MAX_INPUT_LENGTH,"转账数据过大")
+        val input=JSONObject(json)
+        val cents=Money.parseCents(string(input,"amount",32).trim())?:throw InvalidInput("请输入有效转账金额，最多两位小数")
+        val value=AccountTransfer(uid=if(input.isNull("uid"))java.util.UUID.randomUUID().toString() else string(input,"uid",36),
+            fromUid=string(input,"fromUid",36),toUid=string(input,"toUid",36),amountCents=cents,
+            occurredAt=integer(input,"occurredAt",1,MAX_TIME),note=string(input,"note",500).trim())
+        val saved=AccountTransfers(app.store).save(value);app.changed()
+        JSONObject().put("ok",true).put("transfer",transferJson(saved)).toString()
+    }catch(error:Exception){failure(error.message?:"转账保存失败，内容已保留").toString()}
+
+    @JavascriptInterface
+    fun deleteTransfer(uid:String):String=try {
+        checkInput(uid.length==36,"转账标识无效")
+        AccountTransfers(app.store).delete(uid);app.changed();JSONObject().put("ok",true).toString()
+    }catch(error:Exception){failure(error.message?:"转账删除失败").toString()}
 
     @JavascriptInterface
     fun deleteAccount(id: Long): String = try {
@@ -415,6 +549,8 @@ class LedgerWebBridge(private val activity: MainActivity) {
         JSONObject().put("ok", true).put("id", id).toString()
     } catch (error: InvalidInput) {
         failure(error.message ?: "账户编号无效").toString()
+    } catch (error: IllegalArgumentException) {
+        failure(error.message ?: "账户删除失败").toString()
     } catch (_: Exception) {
         failure("账户删除失败，请稍后重试").toString()
     }

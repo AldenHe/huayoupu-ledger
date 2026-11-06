@@ -62,7 +62,8 @@ open class ScreenCaptureService:AccessibilityService() {
         paymentMonitor.event(event)
     }
     private fun restoreEnabledRuntime(reason:String) {
-        if(current!==this || CaptureRuntime.running || !ledger.channels.captureEnabled())return
+        if(current!==this || !ledger.channels.captureEnabled())return
+        if(CaptureRuntime.running && (!ledger.channels.enabled(ChannelSettings.Channel.OCR) || CaptureRuntime.sensorStatus()=="ready"))return
         val now=SystemClock.elapsedRealtime()
         if(now<runtimeRestoreNotBefore)return
         if(!ledger.channels.permitted(ChannelSettings.Channel.OCR))return
@@ -275,6 +276,8 @@ open class ScreenCaptureService:AccessibilityService() {
                 if(automatic)ledger.tasks.diagnose(task,"capture_context","payment_success_result:${System.currentTimeMillis()}")
                 ledger.tasks.diagnose(task,"timing","captured_age_ms=${SystemClock.elapsedRealtime()-trigger.eventAtMs}")
                 val image=withContext(Dispatchers.Default) { ledger.recognizer.prepareScreenshot(bitmap!!) }
+                // Queueing and inference need only the prepared JPEG. Release the full display copy first.
+                bitmap?.recycle();bitmap=null
                 if(!allowed())throw CancellationException()
                 if(!ledger.tasks.queued(task,image))throw CancellationException("识别记录已删除")
                 ledger.tasks.diagnose(task,"window_details",windowDetails.toList().takeLast(2).joinToString(" | "))

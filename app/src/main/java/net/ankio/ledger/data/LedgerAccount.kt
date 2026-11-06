@@ -6,7 +6,7 @@ import java.util.UUID
 
 enum class AccountType { ASSET, LIABILITY }
 
-/** Manually maintained balances; transactions never silently mutate these accounts. */
+/** Current balance, adjusted transactionally by linked bills and explicit balance corrections. */
 data class LedgerAccount(
     val id: Long = 0,
     val uid: String = UUID.randomUUID().toString(),
@@ -15,18 +15,23 @@ data class LedgerAccount(
     val amountCents: Long,
     val kind: String = "custom",
     val type: AccountType = AccountType.ASSET,
+    val includedInAssets: Boolean = true,
 ) {
     fun validate() {
         require(id >= 0) { "账户编号无效" }
         require(UUID.fromString(uid).toString() == uid) { "账户标识无效" }
         require(name.isNotBlank() && name.length <= 40 && name == name.trim()) { "账户名称需为 1 至 40 个字符" }
         require(description.length <= 80) { "账户说明最多 80 个字符" }
-        require(amountCents in 0..Money.MAX_CENTS) { "账户余额无效" }
+        require(amountCents in -Money.MAX_CENTS..Money.MAX_CENTS) { "账户余额无效" }
         require(kind in KINDS) { "账户类型无效" }
     }
 
     companion object {
+        const val MAX_EDITABLE_NAME_LENGTH = 20
         val KINDS = setOf("bank", "alipay", "wechat", "cash", "custom") + AccountBanks.entries.map { it.kind }
+        fun nameKey(name:String):String = java.text.Normalizer.normalize(name,java.text.Normalizer.Form.NFKC)
+            // SQLite's UTF-16 binding consumes a leading BOM; compare the visible stored identity.
+            .trim { it.isWhitespace() || it=='\uFEFF' }.lowercase(java.util.Locale.ROOT)
     }
 }
 

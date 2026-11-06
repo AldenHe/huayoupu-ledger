@@ -51,7 +51,7 @@ class LocalRecognitionClient(context: android.content.Context) {
                     LocalOcrLine(line.text, box?.left ?: 0, box?.top ?: 0, box?.right ?: 0, box?.bottom ?: 0)
                 }
                 val bill = LocalOcrBillParser.parse(lines, ocr.width, ocr.height, receivedAt, livePaymentAt, expenseOnly, origin)
-                net.ankio.ledger.core.TransactionRejection.reason(ocr.rawText)?.let { reason ->
+                net.ankio.ledger.core.TransactionRejection.reason(ocr.rawText,manualCapture=!expenseOnly && livePaymentAt==null)?.let { reason ->
                     return@run RecognitionResult(ocr.rawText.take(16_384),null,screenshot=submitted,skipReason=reason)
                 }
                 if (bill == null) return@run RecognitionResult(ocr.rawText.take(16_384), null, screenshot = submitted)

@@ -57,6 +57,8 @@ class CaptureHealth(private val context:Context) {
     fun snapshot():JSONObject {
         val state=state()
         return JSONObject().put("enabled",state.enabled).put("ready",state.blocker==CaptureBlocker.NONE)
+            .put("shakeReady",CaptureRuntime.sensorStatus()=="ready")
+            .put("shakeStatus",CaptureRuntime.sensorStatus()).put("shakeMessage",context.ledger.shakeRuntime.statusMessage())
             .put("blocker",state.blocker.name).put("message",message(state.blocker))
             .put("permitted",state.permitted).put("connected",state.connected).put("runtimeRunning",state.runtimeRunning)
             .put("deviceGuide",DevicePermissionGuidance.payload())

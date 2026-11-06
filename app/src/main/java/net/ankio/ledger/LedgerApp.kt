@@ -47,7 +47,7 @@ class LedgerApp : Application() {
             store.reconcilePendingRefunds().forEach { (from,to) -> tasks.reassignRecord(from,to) }
             store.reconcilePendingDuplicates().forEach { (from,to) ->
                 val cents=store.get(to)?.bill?.amountCents
-                tasks.reassignRecord(from,to,if(cents==null)"已记账" else "已记账 ¥${net.ankio.ledger.core.Money.format(cents)}")
+                tasks.reassignRecord(from,to,if(cents==null)"已记账" else "已记账 ¥${net.ankio.ledger.core.Money.display(cents)}")
             }
             screenshots.cleanup();changed();captureQueue.resume()
         }
@@ -58,6 +58,7 @@ class LedgerApp : Application() {
     val store by lazy { LedgerStore(this) }
     val tasks by lazy { RecognitionTasks(this) }
     val screenshots by lazy { ScreenshotStore.get(this) }
+    val monthlyBudget by lazy { MonthlyBudget(this) }
     val captureQueue by lazy { net.ankio.ledger.capture.PaymentRecognitionQueue(this) }
     val executionLog by lazy { ExecutionLog(this) }
     val channels by lazy { ChannelSettings(this) }

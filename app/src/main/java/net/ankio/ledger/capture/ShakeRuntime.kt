@@ -12,12 +12,14 @@ class ShakeRuntime(private val context:Context) {
     private val preferences=context.getSharedPreferences("shake_runtime",Context.MODE_PRIVATE)
     @Volatile private var lastSampleAgeMs=-1L
     @Volatile private var lastSampleAtMs=-1L
+    @Volatile internal var lastFreshSampleAtMs=-1L;private set
     @Volatile private var deliveryThread="not_received"
     @Volatile private var lastPersistedDelayAtMs=-3000L
     fun started() { preferences.edit().putLong("startedAt",System.currentTimeMillis()).putString("sensorThread","dedicated").apply() }
     fun sample(eventAtMs:Long,receivedAtMs:Long) {
         val age=receivedAtMs-eventAtMs
         lastSampleAgeMs=age;lastSampleAtMs=receivedAtMs
+        if(age in 0..1500L)lastFreshSampleAtMs=receivedAtMs
         deliveryThread=Thread.currentThread().name
         if(age !in 0..1500L && receivedAtMs-lastPersistedDelayAtMs>=3000) {
             lastPersistedDelayAtMs=receivedAtMs
@@ -25,10 +27,23 @@ class ShakeRuntime(private val context:Context) {
         }
     }
     fun trigger(ageMs:Long) { preferences.edit().putLong("lastTriggerAgeMs",ageMs).putLong("lastTriggerAt",System.currentTimeMillis()).apply() }
+    fun statusMessage()=when(CaptureRuntime.sensorStatus()) {
+        "ready" -> "摇一摇运行中"
+        "disabled" -> "摇一摇已关闭"
+        "disconnected" -> "页面识别服务未连接"
+        "screen_off","locked" -> "解锁后恢复摇一摇"
+        "starting" -> "正在启动摇动监听"
+        "recovering","stalled" -> "摇动监听恢复中，请检查后台运行设置"
+        else -> "摇动监听不可用，请使用截图导入"
+    }
     fun snapshot():JSONObject {
         val power=context.getSystemService(PowerManager::class.java)
         val activity=context.getSystemService(ActivityManager::class.java)
-        return JSONObject().put("running",CaptureRuntime.running && context.ledger.channels.enabled(ChannelSettings.Channel.OCR))
+        val status=CaptureRuntime.sensorStatus()
+        return JSONObject().put("running",status=="ready")
+            .put("sensorStatus",status).put("sensorRegistered",CaptureRuntime.instance?.sensorRegistered==true)
+            .put("recoveryCount",CaptureRuntime.instance?.recoveryCount?:0)
+            .put("lastRecoveryAt",CaptureRuntime.instance?.lastRecoveryAt?:0)
             .put("accessibilityConnected",ScreenCaptureService.current!=null)
             .put("backgroundRestricted",activity.isBackgroundRestricted)
             .put("batteryExempt",power.isIgnoringBatteryOptimizations(context.packageName)).put("powerSave",power.isPowerSaveMode)

@@ -21,6 +21,10 @@ data class LedgerRecord(
     val duplicateId: Long? = null,
     val note: String = "",
     val identities: List<TransactionIdentity> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val requiresReimbursement: Boolean = false,
+    val accountUid: String? = null,
+    val accountEffect: Long = 0,
 ) {
     fun existing() = ExistingBill(id, capture.source, capture.origin, capture.text,
         bill.amountCents, bill.direction, bill.merchant, bill.occurredAt, bill.transactionId, bill.timeExplicit)
@@ -35,7 +39,9 @@ sealed class IngestResult {
 
 data class DeletedRecord(val id:Long,val expiresAt:Long)
 
-class LedgerStore(context: Context, private val name: String = "ledger.db", private val screenshots: ScreenshotStore = ScreenshotStore.get(context)) : SQLiteOpenHelper(context, name, null, 8) {
+class LedgerStore(context: Context, private val name: String = "ledger.db", private val screenshots: ScreenshotStore = ScreenshotStore.get(context)) : SQLiteOpenHelper(context, name, null, 14) {
+    internal val reimbursementContext: Context = context.applicationContext
+    internal val reimbursementDirectory = java.io.File(context.filesDir, "reimbursement-originals/" + UUID.nameUUIDFromBytes(name.toByteArray()).toString())
     private fun imageOwner(id: Long) = "ledger:$name:$id"
     private fun historyOwner(id: Long, sequence: Int) = if (sequence == 1) imageOwner(id) else "ledger:$name:$id:history:$sequence"
     override fun onOpen(db:SQLiteDatabase) {
@@ -63,7 +69,8 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
             received_at INTEGER NOT NULL, amount INTEGER, direction TEXT,
             merchant TEXT NOT NULL, category TEXT NOT NULL, occurred_at INTEGER NOT NULL,
             transaction_id TEXT, reliable INTEGER NOT NULL, time_explicit INTEGER NOT NULL,
-            state TEXT NOT NULL, reason TEXT NOT NULL, duplicate_id INTEGER, note TEXT NOT NULL)""")
+            state TEXT NOT NULL, reason TEXT NOT NULL, duplicate_id INTEGER, note TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '',
+            requires_reimbursement INTEGER NOT NULL DEFAULT 0 CHECK(requires_reimbursement IN (0,1)))""")
         db.execSQL("CREATE INDEX records_time ON records(occurred_at)")
         db.execSQL("CREATE INDEX records_transaction ON records(transaction_id)")
         db.execSQL("CREATE INDEX records_received ON records(received_at)")
@@ -73,10 +80,37 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         createMerchantIcons(db)
         createRefunds(db)
         createIdentitiesAndUndo(db)
+        ReimbursementStore.createSchema(db)
+        AccountPostings.create(db)
+        AccountTransfers.createSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..7 && newVersion == 8) { "Unsupported database migration $oldVersion → $newVersion" }
+        if(oldVersion<13)upgradeLegacy(db,oldVersion,13)
+        check(oldVersion in 1..13 && newVersion==14) { "Unsupported database migration $oldVersion → $newVersion" }
+        AccountPostings.create(db)
+        AccountTransfers.createSchema(db)
+    }
+
+    private fun upgradeLegacy(db:SQLiteDatabase,oldVersion:Int,newVersion:Int) {
+        check(oldVersion in 1..12 && newVersion == 13) { "Unsupported database migration $oldVersion → $newVersion" }
+        ReimbursementStore.createSchema(db)
+        if (oldVersion >= 10) return
+        db.execSQL("ALTER TABLE records ADD COLUMN requires_reimbursement INTEGER NOT NULL DEFAULT 0 CHECK(requires_reimbursement IN (0,1))")
+        if(oldVersion==9) {
+            // Exact label migration in SQLiteOpenHelper's transaction; financial fields never change.
+            val marked=BillTags.toStorage(listOf("报销"))
+            db.execSQL("UPDATE records SET requires_reimbursement=1 WHERE instr(tags,?)>0",arrayOf(marked))
+            db.rawQuery("SELECT id,tags FROM records WHERE requires_reimbursement=1",null).use { c ->
+                while(c.moveToNext())db.update("records",ContentValues().apply {
+                    put("tags",BillTags.toStorage(BillTags.fromStorage(c.getString(1))-"报销"))
+                },"id=?",arrayOf(c.getLong(0).toString()))
+            }
+            return
+        }
+        // Add metadata before legacy readers run; v8 requires no identity/history rebuild.
+        db.execSQL("ALTER TABLE records ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        if(oldVersion==8)return
         // SQLiteOpenHelper wraps this migration in a transaction; existing bills remain untouched.
         if (oldVersion == 1) createAccountsAndCategories(db)
         if (oldVersion < 3) createCaptureImages(db)
@@ -343,11 +377,12 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
             }
             // Without a transaction ID an equal amount/name/time is only a candidate: a new purchase
             // can look the same. Keep it outside totals until the user decides which payment it is.
-            val refundedPaymentCandidate=refundedOriginals.firstOrNull { old ->
+            val refundedPaymentCandidates=refundedOriginals.filter { old ->
                 (bill.transactionId.isNullOrBlank() || old.bill.transactionId.isNullOrBlank()) &&
                     bill.timeExplicit && old.bill.timeExplicit && kotlin.math.abs(bill.occurredAt-old.bill.occurredAt)<=120_000 &&
                     MerchantNames.key(bill.merchant)?.let { it==MerchantNames.key(old.bill.merchant) }==true
             }
+            val refundedPaymentCandidate=refundedPaymentCandidates.firstOrNull()
             val near = db.query("records", null,
                 "NOT EXISTS(SELECT 1 FROM record_deletions d WHERE d.record_id=records.id) AND amount=? AND COALESCE(direction,'')=? AND (transaction_id = ? OR occurred_at BETWEEN ? AND ? OR received_at BETWEEN ? AND ?)",
                 arrayOf(bill.amountCents?.toString() ?: "",bill.direction?.name ?: "",bill.transactionId ?: "", (bill.occurredAt - 120_000).toString(),
@@ -371,15 +406,44 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
                 val original=if(promoted)previous.copy(bill=bill,state=RecordState.POSTED,reason=bill.reason,duplicateId=null)
                     else enrichPaymentPresentation(db,previous,capture,bill,merchantIcon)
                 if(promoted)check(db.update("records",values(original),"id=?",arrayOf(original.id.toString()))==1)
+                if(promoted)AccountPostings.synchronize(db,original.id,assignDefault=true)
                 if(promoted)linkMerchantIcon(db,original.id,original.bill.merchant,merchantIcon)
                 persistIdentities(db,original.id,(original.identities+incomingIdentities).distinct())
                 val supplemented = bill.reliable && appendPaymentScreenshot(db, original, capture, screenshot)
                 db.setTransactionSuccessful()
-                return if (supplemented || promoted || original!=previous) IngestResult.Saved(original, supplemented=supplemented) else IngestResult.DuplicateSkipped
+                return if (supplemented || promoted || original!=previous) IngestResult.Saved(requireNotNull(get(original.id)), supplemented=supplemented) else IngestResult.DuplicateSkipped
             }
-            val automaticCandidate=automaticPaymentCandidates(capture,bill).firstOrNull { isAutomaticPayment(it) }
+            val automaticCandidates=automaticPaymentCandidates(capture,bill)
+            val automaticCandidate=automaticCandidates.firstOrNull { isAutomaticPayment(it) }
             val possible = duplicate as? Duplicate.Possible ?: refundedPaymentCandidate?.let { Duplicate.Possible(it.id) }
                 ?: automaticCandidate?.let { Duplicate.Possible(it.id) }
+            // An explicit shake is enrichment once duplicate evidence is found. It
+            // must not turn the same payment into another review draft or debit.
+            if(possible!=null && capture.source==Source.OCR && eventKey==null && screenshot!=null && !requireReview && bill.reliable) {
+                // Approximate live-capture times may only be completed by uniqueAutomaticPayment.
+                val candidates=(near.filter { DuplicateDetector.find(capture,bill,listOf(it))!=Duplicate.None }.mapNotNull { get(it.id) }+refundedPaymentCandidates)
+                    .distinctBy { it.id }.filter { it.state==RecordState.POSTED && !identitiesConflict(it,capture,bill) &&
+                        paymentProvider(it.capture)==paymentProvider(capture) && paymentProvider(capture)!=null &&
+                        (bill.transactionId.isNullOrBlank() || it.bill.transactionId.isNullOrBlank() || bill.transactionId==it.bill.transactionId) }
+                    .sortedBy { kotlin.math.abs(it.bill.occurredAt-bill.occurredAt) }
+                if(candidates.isEmpty() && automaticCandidates.size>1) {
+                    db.setTransactionSuccessful();return IngestResult.Skipped("已有多笔相近账单，未新增，请打开原账单补图")
+                }
+                if(candidates.isNotEmpty()) {
+                val first=candidates.firstOrNull()
+                val target=first?.takeIf { candidates.size==1 ||
+                    kotlin.math.abs(it.bill.occurredAt-bill.occurredAt)<kotlin.math.abs(candidates[1].bill.occurredAt-bill.occurredAt) }
+                if(target==null) { db.setTransactionSuccessful();return IngestResult.Skipped("已有多笔相近账单，未新增，请打开原账单补图") }
+                // A later distinct payment must be distinguishable from this supplemented one.
+                if(target.bill.transactionId.isNullOrBlank() && !bill.transactionId.isNullOrBlank())
+                    check(db.update("records",ContentValues().apply { put("transaction_id",bill.transactionId) },"id=?",arrayOf(target.id.toString()))==1)
+                persistIdentities(db,target.id,(target.identities+incomingIdentities).distinct())
+                val supplemented=appendPaymentScreenshot(db,target,capture,screenshot)
+                if(MerchantNames.key(target.bill.merchant)==MerchantNames.key(bill.merchant))linkMerchantIcon(db,target.id,target.bill.merchant,merchantIcon)
+                db.setTransactionSuccessful()
+                return IngestResult.Saved(requireNotNull(get(target.id)),supplemented=supplemented)
+                }
+            }
             val reason = if(refundedPaymentCandidate!=null) "疑似为已退款账单的原付款页面，请核对后保存"
                 else if (possible != null) "疑似与已有账单重复，请核对后保存" else bill.reason
             val record = LedgerRecord(capture = capture, bill = bill.copy(reason = reason),
@@ -388,6 +452,7 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
                 reason = reason,
                 duplicateId = possible?.id)
             val id = db.insertOrThrow("records", null, values(record))
+            AccountPostings.synchronize(db,id,assignDefault=true)
             persistIdentities(db,id,identities(record))
             if (screenshot != null) {
                 screenshots.put(imageOwner(id), screenshot, capture.receivedAt, "HISTORY")
@@ -517,9 +582,13 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         .toMap().also { drafts -> drafts.keys.forEach(::delete) }
 
     @Synchronized
-    fun saveEdited(record: LedgerRecord): LedgerRecord {
+    fun saveEdited(record: LedgerRecord, selectedAccountUid:String?=null, accountSelectionSpecified:Boolean=false): LedgerRecord {
+        BillTags.validate(record.tags)
+        require(BillTags.LEGACY_REIMBURSEMENT !in record.tags) { "请使用是否报销属性，不要创建报销标签" }
         val amount = record.bill.amountCents
         val previous=record.id.takeIf { it!=0L }?.let(::get)
+        require(previous == null || previous.uid == record.uid) { "账单标识不能修改" }
+        require(previous==null && record.accountUid==null || previous!=null && record.accountUid==previous.accountUid) { "请通过账户选择更改关联" }
         require(record.bill.refund == null || record.id != 0L && previous?.state == RecordState.POSTED) { "请通过关联原账单确认退款" }
         require(amount != null && (amount > 0 || amount == 0L && validRefundSummary(record.bill))) { "请输入有效金额" }
         require(record.bill.refund == null || validRefundSummary(record.bill)) { "退款账单金额必须等于原付金额减累计退款" }
@@ -532,7 +601,7 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         val provenance=previous?.takeIf { isAutomaticPayment(it) && it.bill.amountCents==record.bill.amountCents &&
             it.bill.direction==record.bill.direction && it.bill.merchant==record.bill.merchant &&
             it.bill.occurredAt==record.bill.occurredAt && it.bill.timeExplicit==record.bill.timeExplicit }?.reason.orEmpty()
-        val posted = record.copy(identities=previous?.identities ?: record.identities,bill = record.bill.copy(reliable = true, reason = provenance),
+        val posted = record.copy(accountEffect=previous?.accountEffect ?: 0,identities=previous?.identities ?: record.identities,bill = record.bill.copy(reliable = true, reason = provenance),
             state = RecordState.POSTED, reason = provenance, duplicateId = null)
         val db = writableDatabase
         db.beginTransaction()
@@ -543,14 +612,38 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
                     "id = ? AND NOT EXISTS(SELECT 1 FROM record_deletions d WHERE d.record_id=records.id)", arrayOf(record.id.toString())) == 1) { "账单已被删除" }
                 record.id
             }
+            if(accountSelectionSpecified)AccountPostings.select(db,id,selectedAccountUid)
+            else AccountPostings.synchronize(db,id,assignDefault=previous==null || previous.state!=RecordState.POSTED)
             persistIdentities(db,id,identities(posted))
             if (record.id == 0L) insertHistory(db,id,RecordCaptureHistory(1,record.capture.receivedAt,"payment",amount,0,record.capture.text,false))
             db.delete("merchant_icons", "record_id = ?", arrayOf(id.toString()))
             linkMerchantIcon(db, id, posted.bill.merchant, null)
             pruneIcon(db, previousKey)
+            ReimbursementStore.validateStoredRelationships(db)
             db.setTransactionSuccessful()
             return requireNotNull(get(id))
         } finally { db.endTransaction() }
+    }
+
+    /** Tag changes preserve category, financial fields and any other bill tags. */
+    @Synchronized fun setTag(id:Long,uid:String,tag:String,enabled:Boolean):LedgerRecord {
+        BillTags.validate(listOf(tag))
+        require(tag!=BillTags.LEGACY_REIMBURSEMENT) { "请使用是否报销属性" }
+        val record=requireNotNull(get(id)) { "账单已不存在" }
+        require(record.uid==uid && record.state==RecordState.POSTED) { "账单已变更，请重新打开" }
+        val tags=if(enabled)(record.tags+tag).distinct() else record.tags-tag
+        check(writableDatabase.update("records",ContentValues().apply { put("tags",BillTags.toStorage(tags)) },
+            "id=? AND uid=?",arrayOf(id.toString(),uid))==1)
+        return requireNotNull(get(id))
+    }
+
+    /** Independent metadata: category, amounts, refund history and custom labels stay unchanged. */
+    @Synchronized fun setRequiresReimbursement(id:Long,uid:String,enabled:Boolean):LedgerRecord {
+        val record=requireNotNull(get(id)) { "账单已不存在" }
+        require(record.uid==uid && record.state==RecordState.POSTED) { "账单已变更，请重新打开" }
+        check(writableDatabase.update("records",ContentValues().apply { put("requires_reimbursement",if(enabled)1 else 0) },
+            "id=? AND uid=? AND NOT EXISTS(SELECT 1 FROM record_deletions d WHERE d.record_id=records.id)",arrayOf(id.toString(),uid))==1)
+        return requireNotNull(get(id))
     }
 
     fun get(id: Long): LedgerRecord? = readableDatabase.query("records", null, "id = ? AND NOT EXISTS(SELECT 1 FROM record_deletions d WHERE d.record_id=records.id)",
@@ -846,6 +939,7 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         require(refund.mode=="cumulative" && validRefundSummary(bill))
         val record=LedgerRecord(capture=capture,bill=bill.copy(reason=""),state=RecordState.POSTED,reason="")
         val id=db.insertOrThrow("records",null,values(record))
+        AccountPostings.synchronize(db,id,assignDefault=true)
         persistIdentities(db,id,identities(record))
         try {
             image?.let {
@@ -877,6 +971,7 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
                 } else if(canCreateNetRefund(pending.capture,pending.bill)) {
                     val settled=pending.copy(state=RecordState.POSTED,reason="",bill=pending.bill.copy(reason=""))
                     check(db.update("records",values(settled),"id=?",arrayOf(pending.id.toString()))==1)
+                    AccountPostings.synchronize(db,pending.id)
                     db.update("capture_history",ContentValues().apply {
                         put("kind",if(pending.bill.amountCents==0L)"full_refund" else "partial_refund")
                     },"record_id=? AND sequence=1 AND kind='refund_pending'",arrayOf(pending.id.toString()))
@@ -927,6 +1022,7 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
             val updated=original.copy(bill=original.bill.copy(amountCents=incoming.originalAmountCents-total,refund=summary,
                 transactionId=original.bill.transactionId ?: bill.transactionId))
             check(db.update("records",values(updated),"id=?",arrayOf(original.id.toString()))==1)
+            AccountPostings.synchronize(db,original.id)
             persistIdentities(db,original.id,identities(updated))
             insertHistory(db,original.id,RecordCaptureHistory(sequence,capture.receivedAt,if(total==incoming.originalAmountCents)"full_refund" else "partial_refund",
                 updated.bill.amountCents,total,capture.text,image!=null,incoming.mode,incoming.refundId,incoming.refundedCents))
@@ -995,11 +1091,18 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         return screenshots.image(imageOwner(id))
     }
 
+    /** The surrounding restore transaction rolls financial rows back; media lives in another database. */
+    @Synchronized internal fun releaseRestoredMedia(id:Long) {
+        captureHistory(id).forEach { screenshots.release(historyOwner(id,it.sequence)) }
+        screenshots.release(imageOwner(id))
+    }
+
     @Synchronized fun delete(id: Long) {
         val db = writableDatabase
         db.beginTransaction()
         try {
             val previousKey = iconKey(db, id)
+            AccountPostings.reverse(db,id)
             db.delete("record_deletions","record_id=?",arrayOf(id.toString()))
             db.delete("record_identities","record_id=?",arrayOf(id.toString()))
             db.delete("merchant_icons", "record_id = ?", arrayOf(id.toString()))
@@ -1016,13 +1119,16 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
     /** The deletion deadline is durable: process death cannot resurrect a removed bill. */
     @Synchronized fun softDelete(id:Long,now:Long=System.currentTimeMillis()):Boolean {
         if(get(id)==null)return false
+        val db=writableDatabase;db.beginTransaction()
+        try {
         return synchronized(screenshots) {
             val deleted=writableDatabase.insertWithOnConflict("record_deletions",null,ContentValues().apply {
                 put("record_id",id);put("expires_at",now+UNDO_WINDOW_MS)
             },SQLiteDatabase.CONFLICT_IGNORE)!=-1L
-            if(deleted)markDeletedMedia(id,"UNDO")
-            deleted
+            if(deleted) { AccountPostings.synchronize(db,id);markDeletedMedia(id,"UNDO") }
+            db.setTransactionSuccessful();deleted
         }
+        } finally { db.endTransaction() }
     }
 
     private fun markDeletedMedia(id:Long,state:String) {
@@ -1031,9 +1137,12 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
     }
 
     @Synchronized fun undoDelete(id:Long,now:Long=System.currentTimeMillis()):Boolean {
-        val restored=writableDatabase.delete("record_deletions","record_id=? AND expires_at>?",arrayOf(id.toString(),now.toString()))==1
-        if(restored)markDeletedMedia(id,"HISTORY")
-        return restored
+        val db=writableDatabase;db.beginTransaction()
+        try {
+        val restored=db.delete("record_deletions","record_id=? AND expires_at>?",arrayOf(id.toString(),now.toString()))==1
+        if(restored) { AccountPostings.synchronize(db,id);markDeletedMedia(id,"HISTORY") }
+        db.setTransactionSuccessful();return restored
+        } finally { db.endTransaction() }
     }
 
     fun pendingDeletion(now:Long=System.currentTimeMillis()):DeletedRecord? = readableDatabase.rawQuery(
@@ -1057,15 +1166,56 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
 
     @Synchronized
     fun saveAccount(account: LedgerAccount): LedgerAccount {
-        account.validate()
         val db = writableDatabase
-        if (account.id == 0L) return account.copy(id = db.insertOrThrow("accounts", null, accountValues(account)))
-        check(db.update("accounts", accountValues(account), "id = ? AND uid = ?",
-            arrayOf(account.id.toString(), account.uid)) == 1) { "账户已不存在" }
-        return account
+        db.beginTransaction()
+        try {
+            val original=if(account.id==0L)null else getAccount(account.id)
+            require(account.name.codePointCount(0,account.name.length)<=LedgerAccount.MAX_EDITABLE_NAME_LENGTH ||
+                original?.uid==account.uid && original.name==account.name) { "账户名称最多 20 个字符" }
+            account.validate()
+            val nameKey=LedgerAccount.nameKey(account.name)
+            require(nameKey.isNotEmpty()) { "账户名称需为 1 至 40 个字符" }
+            require(accounts().none { it.id!=account.id && LedgerAccount.nameKey(it.name)==nameKey }) { "账户名称已存在，请使用其他名称" }
+            if(account.id!=0L && getAccount(account.id)?.type!=account.type)AccountTransfers.requireNoHistory(db,account.uid)
+            if(account.id!=0L && getAccount(account.id)?.type!=account.type)require(!db.rawQuery("SELECT 1 FROM records WHERE account_uid=? LIMIT 1",arrayOf(account.uid)).use { it.moveToFirst() }) { "账户已关联账单，不能更改资产或负债类型" }
+            val saved=if (account.id == 0L) account.copy(id = db.insertOrThrow("accounts", null, accountValues(account))) else {
+                check(db.update("accounts", accountValues(account), "id = ? AND uid = ?",
+                    arrayOf(account.id.toString(), account.uid)) == 1) { "账户已不存在" }
+                account
+            }
+            db.setTransactionSuccessful()
+            return saved
+        } finally { db.endTransaction() }
     }
 
-    @Synchronized fun deleteAccount(id: Long) { writableDatabase.delete("accounts", "id = ?", arrayOf(id.toString())) }
+    @Synchronized fun deleteAccount(id: Long) {
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            getAccount(id)?.let { account ->
+                AccountTransfers.requireNoHistory(db,account.uid)
+                db.update("records",ContentValues().apply { putNull("account_uid");put("account_effect",0) },"account_uid=?",arrayOf(account.uid))
+                AccountPostings.clearDeletedAccount(db,account.uid)
+                db.delete("accounts","id=?",arrayOf(id.toString()))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun defaultAccount(channel:String?=null):LedgerAccount?=AccountPostings.defaultUid(readableDatabase,channel)?.let { uid->
+        readableDatabase.query("accounts",null,"uid=?",arrayOf(uid),null,null,null).use { if(it.moveToFirst())readAccount(it) else null }
+    }
+    @Synchronized fun setDefaultAccount(uid:String?)=AccountPostings.setDefault(writableDatabase,uid)
+    fun channelDefaultAccounts():Map<String,String> = AccountPostings.channelDefaults(readableDatabase)
+    @Synchronized fun setChannelDefaultAccount(channel:String,uid:String?)=AccountPostings.setChannelDefault(writableDatabase,channel,uid)
+    @Synchronized fun setRecordAccount(id:Long,uid:String,accountUid:String?):LedgerRecord {
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            val current=requireNotNull(get(id)) { "账单已不存在" }
+            require(current.uid==uid && current.state==RecordState.POSTED) { "账单已变更，请重新打开" }
+            AccountPostings.select(db,id,accountUid)
+            db.setTransactionSuccessful();return requireNotNull(get(id))
+        } finally { db.endTransaction() }
+    }
 
     fun customCategories(): List<CustomCategory> = readableDatabase.query("custom_categories", null,
         null, null, null, null, "direction ASC, rowid ASC").use { cursor -> buildList {
@@ -1089,30 +1239,56 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
 
     @Synchronized
     fun merge(records: List<LedgerRecord>, accounts: List<LedgerAccount> = emptyList(),
-              categories: List<CustomCategory> = emptyList()): Int {
+              categories: List<CustomCategory> = emptyList()): Int = mergeRestored(records,accounts,categories,emptyList())
+
+    /** Snapshot restore applies the net of all missing bill/transfer UUIDs once per existing account. */
+    @Synchronized internal fun mergeRestored(records:List<LedgerRecord>,accounts:List<LedgerAccount>,
+              categories:List<CustomCategory>,transfers:List<AccountTransfer>):Int {
         val db = writableDatabase
         db.beginTransaction()
         try {
             var imported = 0
+            val deltas=mutableMapOf<String,Long>()
+            val existingAccounts=accounts().mapTo(mutableSetOf()) { it.uid }
+            accounts.forEach { account ->
+                account.validate()
+                if(account.uid !in existingAccounts)db.insertOrThrow("accounts",null,accountValues(account.copy(id=0)))
+            }
             records.forEach { record ->
-                // UUIDs identify records in repeated backups. Do not overwrite subsequent local edits.
+                // UUIDs identify records in repeated backups. Existing local edits win.
                 val exists = db.rawQuery("SELECT 1 FROM records WHERE uid = ?", arrayOf(record.uid)).use { it.moveToFirst() }
                 if (!exists) {
-                    val id = db.insertOrThrow("records", null, values(record.copy(id = 0, duplicateId = null)))
+                    val appliesToExisting=record.accountUid in existingAccounts
+                    val amount=record.bill.amountCents
+                    val direction=record.bill.direction
+                    val effect=if(appliesToExisting && record.state==RecordState.POSTED && amount!=null && direction!=null)
+                        AccountPostings.effect(requireNotNull(AccountPostings.account(db,requireNotNull(record.accountUid))).second,
+                            amount,direction) else 0L
+                    val restored=record.copy(id=0,duplicateId=null,accountEffect=if(appliesToExisting)effect else record.accountEffect)
+                    val id = db.insertOrThrow("records", null, values(restored))
+                    // New accounts carry snapshot balances. Existing accounts receive only
+                    // newly imported bills; re-importing a UUID can never debit twice.
+                    if(appliesToExisting) {
+                        val uid=requireNotNull(record.accountUid)
+                        deltas[uid]=Math.addExact(deltas[uid]?:0L,effect)
+                    }
                     persistIdentities(db,id,identities(record))
                     linkMerchantIcon(db, id, record.bill.merchant, null)
                     imported++
                 }
             }
-            accounts.forEach { account ->
-                account.validate()
-                val exists = db.rawQuery("SELECT 1 FROM accounts WHERE uid = ?", arrayOf(account.uid)).use { it.moveToFirst() }
-                if (!exists) db.insertOrThrow("accounts", null, accountValues(account.copy(id = 0)))
+            require(transfers.map { it.uid }.distinct().size==transfers.size) { "转账标识重复" }
+            AccountTransfers(this).restore(transfers,existingAccounts).forEach { (uid,delta)->
+                deltas[uid]=Math.addExact(deltas[uid]?:0L,delta)
             }
+            // A bill may offset a transfer or another bill in the same snapshot. Only
+            // final balances are meaningful; replay order must not cause temporary overflow.
+            deltas.forEach { (uid,delta)->AccountPostings.adjust(db,uid,delta) }
             categories.forEach { category ->
                 category.validate()
                 db.insertWithOnConflict("custom_categories", null, categoryValues(category), SQLiteDatabase.CONFLICT_IGNORE)
             }
+            ReimbursementStore.validateStoredRelationships(db)
             db.setTransactionSuccessful()
             return imported
         } finally { db.endTransaction() }
@@ -1120,7 +1296,8 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
 
     private fun accountValues(account: LedgerAccount) = ContentValues().apply {
         put("uid", account.uid); put("name", account.name); put("description", account.description)
-        put("amount", account.amountCents); put("kind", account.kind); put("type", account.type.name)
+        put("amount", maxOf(0,account.amountCents));put("balance_adjustment",minOf(0,account.amountCents)); put("kind", account.kind); put("type", account.type.name)
+        put("included_in_assets",if(account.includedInAssets)1 else 0)
     }
 
     private fun categoryValues(category: CustomCategory) = ContentValues().apply {
@@ -1132,9 +1309,10 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         uid = cursor.getString(cursor.getColumnIndexOrThrow("uid")),
         name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
         description = cursor.getString(cursor.getColumnIndexOrThrow("description")),
-        amountCents = cursor.getLong(cursor.getColumnIndexOrThrow("amount")),
+        amountCents = cursor.getLong(cursor.getColumnIndexOrThrow("amount"))+cursor.getLong(cursor.getColumnIndexOrThrow("balance_adjustment")),
         kind = cursor.getString(cursor.getColumnIndexOrThrow("kind")),
-        type = AccountType.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("type"))))
+        type = AccountType.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("type"))),
+        includedInAssets = cursor.getInt(cursor.getColumnIndexOrThrow("included_in_assets"))==1)
 
     private fun query(where: String?, args: Array<String>?): List<LedgerRecord> = readableDatabase.query(
         "records", null, "NOT EXISTS(SELECT 1 FROM record_deletions d WHERE d.record_id=records.id)"+(where?.let { " AND ($it)" }?:""), args, null, null, "occurred_at DESC, id DESC").use { cursor ->
@@ -1149,7 +1327,9 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
         put("occurred_at", r.bill.occurredAt); put("transaction_id", r.bill.transactionId)
         put("reliable", if (r.bill.reliable) 1 else 0); put("time_explicit", if (r.bill.timeExplicit) 1 else 0)
         put("state", r.state.name); put("reason", r.reason); put("duplicate_id", r.duplicateId)
-        put("note", r.note)
+        put("note", r.note);put("tags",BillTags.toStorage(r.tags))
+        put("requires_reimbursement",if(r.requiresReimbursement)1 else 0)
+        put("account_uid",r.accountUid);put("account_effect",r.accountEffect)
         put("transaction_identities",TransactionIdentities.encode(identities(r)))
         put("refund_provider", r.bill.refund?.provider);put("refund_original", r.bill.refund?.originalAmountCents)
         put("refund_amount", r.bill.refund?.refundedCents);put("refund_mode",r.bill.refund?.mode);put("refund_id",r.bill.refund?.refundId)
@@ -1167,6 +1347,6 @@ class LedgerStore(context: Context, private val name: String = "ledger.db", priv
                 number("reliable") == 1L, text("reason"), number("time_explicit") == 1L,
                 optionalText("refund_provider")?.let { RefundInfo(it,number("refund_original"),number("refund_amount"),text("refund_mode"),optionalText("refund_id")) }),
             RecordState.valueOf(text("state")), text("reason"), optionalNumber("duplicate_id"), text("note"),
-            TransactionIdentities.decode(text("transaction_identities")))
+            TransactionIdentities.decode(text("transaction_identities")),BillTags.fromStorage(text("tags")),number("requires_reimbursement")==1L,if(c.getColumnIndex("account_uid")>=0)optionalText("account_uid") else null,if(c.getColumnIndex("account_effect")>=0)number("account_effect") else 0)
     }
 }

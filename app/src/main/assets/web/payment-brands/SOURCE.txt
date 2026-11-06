@@ -1,0 +1,30 @@
+Official payment brand artwork — retrieved 2026-11-06
+
+WeChat:
+Official page: https://www.wechat.com/en/
+Page link: rel="apple-touch-icon-precomposed"
+Original: https://newres.wechat.com/t/fed_upload/08b92997-2415-408f-b706-442ed4ede518/OTE0YTAw.png
+wechat.png preserves the original 180x180 pixels; provenance metadata was added.
+
+Alipay:
+Official page: https://www.alipay.com/
+Page link: rel="shortcut icon"
+Original: https://mdn.alipayobjects.com/rms/afts/file/A*7EyORZxdNDkAAAAAAAAAAAAAARQnAQ
+Original transparent PNG 2600x1950. Alpha-content bounds: x1034,y749,width531,height452.
+alipay.png crops transparent margins, centers the original logo on a transparent 600x600 canvas,
+and scales uniformly to 180x180. No recoloring, redrawing, or reshaping.
+
+The artwork and trademarks remain the property of their respective owners.
+These files identify user-maintained account categories; no affiliation, endorsement,
+payment integration, or trademark license is claimed. The source-code GPL license
+does not grant ownership of or additional rights in these trademarks.
+
+Alipay square app icon (accounts-reference 2026-11-06):
+Official distribution page: https://mobile.alipay.com/index.htm
+Its download configuration:
+https://gw.alipayobjects.com/os/q/console/73004998/data/production/14f9567e59a70882c4abef114d6e1c61.js
+Original APK linked by that configuration:
+https://gw.alipayobjects.com/os/mwalletmng/L1/71/100/Release/ANDROID/103608100/release/wallet_103608100_client_release_202303081916_64.apk
+alipay-square.png preserves res/drawable-xxxhdpi-v4/appicon.png at its original
+192x192 resolution. Only provenance metadata was added. This is the official
+blue square app icon, without the AI label present in the current iOS artwork.

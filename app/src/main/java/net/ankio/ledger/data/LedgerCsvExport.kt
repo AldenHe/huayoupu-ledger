@@ -23,7 +23,7 @@ object LedgerCsvExport {
 
     private val generalHeader = listOf("时间", "分类", "类型", "金额", "币种", "商户", "备注", "账单UID",
         "交易订单号", "识别来源", "来源应用", "录入时间", "时间来源", "原付款金额", "已退款金额",
-        "退款渠道", "退款模式", "退款单号", "账单状态")
+        "退款渠道", "退款模式", "退款单号", "账单状态", "标签", "需要报销")
 
     // Match the downloaded official V10 template, whose image column is last.
     private val qianjiHeader = listOf("时间", "分类", "二级分类", "类型", "金额", "账户1", "账户2", "备注",
@@ -61,16 +61,17 @@ object LedgerCsvExport {
                     record.capture.origin, date.format(Date(record.capture.receivedAt)),
                     if (bill.timeExplicit) "交易时间" else "识别时间", refund?.let { Money.format(it.originalAmountCents) }.orEmpty(),
                     refund?.let { Money.format(it.refundedCents) }.orEmpty(), refund?.provider.orEmpty(),
-                    refund?.mode.orEmpty(), refund?.refundId.orEmpty(), "已入账")
+                    refund?.mode.orEmpty(), refund?.refundId.orEmpty(), "已入账",BillTags.encode(record.tags),if(record.requiresReimbursement)"是" else "否")
                 Format.QIANJI -> {
                     val note = buildList {
                         if (bill.merchant.isNotBlank()) add("商户：${bill.merchant}")
                         if (record.note.isNotBlank()) add(record.note)
                         bill.transactionId?.takeIf { it.isNotBlank() }?.let { add("交易订单号：$it") }
                         if (refund != null) add("原付款：${Money.format(refund.originalAmountCents)}；已退款：${Money.format(refund.refundedCents)}")
+                        if(record.requiresReimbursement)add("需要报销：是")
                     }.joinToString("；")
                     listOf(at, bill.category, "", direction, amount, "", "", note,
-                        if (bill.amountCents == 0L) "不计收支" else "", "", "", "", "")
+                        if (bill.amountCents == 0L) "不计收支" else "", "", "", record.tags.joinToString(";"), "")
                 }
             }
             row(cells,if(format==Format.GENERAL)setOf(7,8,17) else emptySet())

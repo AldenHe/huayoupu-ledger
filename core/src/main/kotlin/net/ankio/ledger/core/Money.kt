@@ -24,6 +24,10 @@ object Money {
 
     fun format(cents: Long): String = java.math.BigDecimal.valueOf(cents, 2)
         .setScale(2).toPlainString()
+
+    /** Reading format; fixed-scale exchange/export values keep using [format]. */
+    fun display(cents: Long): String = java.math.BigDecimal.valueOf(cents, 2)
+        .stripTrailingZeros().toPlainString()
 }
 
 internal fun normalize(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)

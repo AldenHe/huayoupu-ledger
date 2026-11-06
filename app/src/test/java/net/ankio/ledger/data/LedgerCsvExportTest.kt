@@ -9,6 +9,16 @@ import java.io.OutputStream
 import java.util.Locale
 
 class LedgerCsvExportTest {
+    @Test fun reimbursementPropertyExportsWithoutChangingCategoryOrAmount() {
+        val bill=record().copy(tags=listOf("项目A","出差\"交通"),requiresReimbursement=true)
+        val rows=parse(export(listOf(bill),LedgerCsvExport.Format.GENERAL).second)
+        val values=rows[0].zip(rows[1]).toMap()
+        assertEquals("[\"项目A\",\"出差\\\"交通\"]",values["标签"])
+        assertEquals("是",values["需要报销"])
+        assertEquals(bill.bill.category,values["分类"])
+        assertEquals("128.01",values["金额"])
+    }
+
     private val january = 1_768_435_200_000L
     private val march = 1_773_532_800_000L
 

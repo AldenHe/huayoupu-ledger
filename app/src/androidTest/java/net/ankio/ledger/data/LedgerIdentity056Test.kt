@@ -78,7 +78,7 @@ class LedgerIdentity056Test {
         db.execSQL("DROP TABLE records");db.execSQL("ALTER TABLE records_v7 RENAME TO records")
         db.execSQL("DROP TABLE record_identities");db.execSQL("DROP TABLE record_deletions");db.version=7;store.close()
         LedgerStore(context,name).use { upgraded->
-            assertEquals(8,upgraded.readableDatabase.version)
+            assertEquals(14,upgraded.readableDatabase.version)
             assertEquals(original.uid,upgraded.get(original.id)!!.uid)
             assertEquals(2,upgraded.get(original.id)!!.identities.size)
             assertEquals(original.id,upgraded.matchingIdentity(capture("订单编号 TBORDER0001"),bill("TBORDER0001"))!!.id)

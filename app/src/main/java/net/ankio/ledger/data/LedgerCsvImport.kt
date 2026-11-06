@@ -37,7 +37,9 @@ object LedgerCsvImport {
         val rows=parse(text)
         require(rows.isNotEmpty()) { "CSV 没有表头" }
         val header=rows.first()
-        val own=header.size==general.size && header.toSet()==general.toSet()
+        val own=(header.size==general.size && header.toSet()==general.toSet()) ||
+            (header.size==general.size+1 && header.toSet()==(general+"标签").toSet()) ||
+            (header.size==general.size+2 && header.toSet()==(general+listOf("标签","需要报销")).toSet())
         val qi=header.size==qianji.size && header.toSet()==qianji.toSet()
         require(own || qi) { "请选择花有谱通用 CSV 或钱迹 V10 模板" }
         val records=mutableListOf<LedgerRecord>()
@@ -131,10 +133,13 @@ object LedgerCsvImport {
             else -> throw IllegalArgumentException("识别来源不支持")
         }
         val explicit=field("时间来源").also { require(it in setOf("交易时间","识别时间")) { "时间来源无效" } }=="交易时间"
+        val tags=f["标签"]?.let(BillTags::decode) ?: emptyList()
+        val reimbursement=f["需要报销"]?.let { require(it in listOf("是","否")) { "需要报销须为是或否" };it=="是" }
+            ?: (BillTags.LEGACY_REIMBURSEMENT in tags)
         return LedgerRecord(uid=uid,capture=Capture(source,field("来源应用"),"",date(field("录入时间"))),
             bill=ParsedBill(amount,direction,field("商户").ifBlank { "未命名商户" },field("分类").ifBlank { "其他" },
                 date(field("时间")),field("交易订单号",160).ifBlank { null },true,"",explicit,refund),
-            state=RecordState.POSTED,note=field("备注",500))
+            state=RecordState.POSTED,note=field("备注",500),tags=tags-BillTags.LEGACY_REIMBURSEMENT,requiresReimbursement=reimbursement)
     }
 
     private fun qianjiRecord(f:Map<String,String>,uid:String):LedgerRecord {

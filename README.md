@@ -18,66 +18,53 @@
 - **摇一摇与截图补记**：打开单笔账单详情摇一摇，或导入已有截图。
 - **离线识别与商户图标**：提取金额、商户、时间与订单号，自动裁剪商户 Logo 或头像。
 - **退款与账单核对**：记录原付、已退与实付金额，保留截图和识别原文，支持编辑、去重与删除撤销。
-- **账本与统计**：手动记收支、自定义分类、搜索账单，查看月度分类占比与每日收支趋势。
-- **资产与负债**：管理银行卡、微信、支付宝及现金账户，手动维护余额与净资产。
+- **账本、预算与统计**：手动记收支、自定义分类、搜索账单，查看月度预算、分类占比与每日收支趋势。
+- **标签与待报销**：给账单添加标签、标记待报销，按日期和条件生成账单汇总，导出 PNG、Excel 或 PDF 与图片材料包。
+- **账户与余额联动**：管理银行卡、微信、支付宝及现金账户；账单关联账户后自动调整余额，支持通用默认账户和微信、支付宝各自的默认账户。
 - **备份与迁移**：完整 ZIP 备份恢复、CSV 导入导出，支持钱迹模板。
+
+## 哪些场景可以记账？
+
+**看付款后展示的页面，不只看从哪个 App 发起支付。** 开启对应支付应用并完成授权后，受支持的支付成功页可自动记录支出。
+
+| 场景 | 当前支持方式 |
+| --- | --- |
+| **微信扫码付款、商户付款** | 展示受支持的微信支付成功页时，自动识别记账。 |
+| **微信转账** | 支持付款方的转账成功页；不要求对方先确认收款。 |
+| **支付宝扫码付款、商户付款、转账** | 展示受支持的支付宝支付或转账成功页时，自动识别记账。 |
+| **外卖、购物等第三方 App 拉起微信 / 支付宝付款** | 返回受支持的微信 / 支付宝成功页时，同样可以自动记账。 |
+| **地铁、公交等出行扣费** | 可以记账；展示受支持的支付成功页时自动记录，没有成功页的扣费可打开单笔账单详情摇一摇补录。 |
+| **协议代扣、历史账单、未展示成功页的付款** | 打开可读取的单笔账单详情摇一摇，或导入截图、手动补记；不保证后台自动采集。 |
+| **微信红包** | **暂不支持自动识别记账。** |
+
+密码、验证、系统禁止截图或无法读取的页面会跳过；收款、红包领取和聊天消息不属于自动支出采集范围。[完整覆盖范围](.github/REFERENCE.md#自动记账覆盖范围)
+
+## 版本更新
+
+[0.5.113-v6 更新说明（对比 0.5.88-v6）](.github/RELEASE_NOTES.md) · [Linux.do 发布文案](.github/LINUXDO.md)
 
 ## 界面预览
 
-以下为应用在 Android 模拟器中**实际运行的页面截图**，使用示例账单与账户数据；点击图片可放大。截图已更新为“花有谱”版本，画面中的账单与账户为示例数据。
+以下为本次更新提供的**手机实机截图**；点击图片可查看大图。
 
 | 首页账本 | 收支统计 | 资产管理 |
 | :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-ledger.webp" width="250" alt="首页账本，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-statistics.webp" width="250" alt="收支统计，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-assets.webp" width="250" alt="资产管理，Android 应用实际运行，示例数据" /> |
+| <img src=".github/screenshots/ledger.jpg" width="250" alt="首页账本与月度预算" /> | <img src=".github/screenshots/statistics.jpg" width="250" alt="分类占比与统计筛选" /> | <img src=".github/screenshots/accounts.jpg" width="250" alt="资产账户与默认账户" /> |
 
-| 手动记账 | 截图智能导入 | 我的 |
+| 账单详情 | 账户明细 | 我的 |
 | :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-manual.webp" width="250" alt="手动记账，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-import.webp" width="250" alt="截图智能导入，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-settings.webp" width="250" alt="我的，Android 应用实际运行，示例数据" /> |
+| <img src=".github/screenshots/bill-detail.jpg" width="250" alt="账单详情、支付账户与待报销标记" /> | <img src=".github/screenshots/account-detail.jpg" width="250" alt="账户余额与收支明细" /> | <img src=".github/screenshots/settings.jpg" width="250" alt="支付自动识别与摇一摇设置" /> |
 
 <details>
-<summary>展开查看账单、分类、账户与备份页面</summary>
+<summary>展开查看默认账户、新建账户和记账结果卡片</summary>
 
-| 账单详情 | 账单搜索 | 每日收支趋势 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-record-detail.webp" width="250" alt="账单详情，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-search.webp" width="250" alt="账单搜索，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-daily-trend.webp" width="250" alt="每日收支趋势，Android 应用实际运行，示例数据" /> |
-
-| 分类账单明细 | 自定义分类 | 月份选择 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-category-detail.webp" width="250" alt="分类账单明细，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-categories.webp" width="250" alt="自定义分类，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-month-picker.webp" width="250" alt="月份选择，Android 应用实际运行，示例数据" /> |
-
-| 账户编辑 | 账单与备份 | CSV 导出 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-account-editor.webp" width="250" alt="账户编辑，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-backup.webp" width="250" alt="账单与备份，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-export.webp" width="250" alt="CSV 导出，Android 应用实际运行，示例数据" /> |
-
-</details>
-
-<details>
-<summary>展开查看截图识别、原文和导入预览</summary>
-
-| CSV 导入预览 | 截图识别结果 |
+| 微信默认账户 | 添加账户 |
 | :---: | :---: |
-| <img src=".github/screenshots/ui-csv-import-preview.webp" width="250" alt="CSV 导入预览，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-recognized-bill.webp" width="250" alt="截图识别结果，Android 应用实际运行，示例数据" /> |
+| <img src=".github/screenshots/default-account.jpg" width="250" alt="微信专属默认账户选择" /> | <img src=".github/screenshots/add-account.jpg" width="250" alt="添加微信、支付宝、银行卡或现金账户" /> |
 
-| 识别原文 | 原始截图查看 |
+| 记账结果卡片 | 记账结果卡片展示 |
 | :---: | :---: |
-| <img src=".github/screenshots/ui-recognition-text.webp" width="250" alt="识别原文，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-original-screenshot.webp" width="250" alt="原始截图查看，Android 应用实际运行，示例数据" /> |
-
-</details>
-
-<details>
-<summary>展开查看授权引导、后台设置与使用帮助</summary>
-
-| 页面识别授权 | 系统受限设置引导 | 电池与后台设置 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-permission.webp" width="250" alt="页面识别授权，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-restricted-settings.webp" width="250" alt="系统受限设置引导，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-background-battery.webp" width="250" alt="电池与后台设置，Android 应用实际运行，示例数据" /> |
-
-| 自启动检查 | 最近任务加锁 | 授权设置汇总 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-background-autostart.webp" width="250" alt="自启动检查，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-background-task-lock.webp" width="250" alt="最近任务加锁，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-permission-summary.webp" width="250" alt="授权设置汇总，Android 应用实际运行，示例数据" /> |
-
-| 设置完成 | 摇一摇运行状态 | 使用帮助 |
-| :---: | :---: | :---: |
-| <img src=".github/screenshots/ui-permission-done.webp" width="250" alt="设置完成，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-shake-status.webp" width="250" alt="摇一摇运行状态，Android 应用实际运行，示例数据" /> | <img src=".github/screenshots/ui-help.webp" width="250" alt="使用帮助，Android 应用实际运行，示例数据" /> |
+| <img src=".github/screenshots/result-card.jpg" width="250" alt="识别结果卡片中的金额、待报销和账户操作" /> | <img src=".github/screenshots/result-card-alternate.jpg" width="250" alt="识别完成后显示的记账结果卡片" /> |
 
 </details>
 
@@ -129,7 +116,7 @@ V6 Tiny 的检测与识别权重合计约 **5.95 MiB**，V5 mobile 约 **20.37 M
 2. 在支持的支付成功页完成自动记账；漏记时用摇一摇、截图导入或手动补记。
 3. 回到账本核对记录；换机或卸载前，从「账单与备份」导出完整备份。
 
-自动识别目前记录支出，覆盖范围取决于支付页面与系统版本。识别和数据保存在本机，资产余额由你手动维护。
+自动识别目前记录支出，覆盖范围取决于支付页面与系统版本。识别和数据保存在本机；账户初始余额由你填写，关联账单后随收支调整，不连接银行同步余额。
 
 [使用说明与常见问题](.github/REFERENCE.md#常见问题) · [源码构建](.github/REFERENCE.md#从源码构建) · [参与贡献](CONTRIBUTING.md) · [安全反馈](SECURITY.md)
 

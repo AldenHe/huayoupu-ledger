@@ -71,7 +71,7 @@ class RefundPersistenceTest {
         assertTrue(runCatching { store.saveEdited(full.copy(bill=full.bill.copy(amountCents=100))) }.isFailure)
     }
 
-    @Test fun originalImageWithoutTransactionIdIsSkippedAfterRefundAndDifferentNearPageRequiresReview() {
+    @Test fun shakeOriginalPaymentAfterRefundOnlyAddsEvidenceAndKeepsNetExpense() {
         val original=payment(id=null)
         val pending=ingestRefund().record
         store.confirmRefund(pending.id,original.id)
@@ -79,7 +79,8 @@ class RefundPersistenceTest {
         assertEquals(1,store.all().size);assertEquals(3654L,store.get(original.id)!!.bill.amountCents)
         val uncertain=store.ingest(capture(at=instant+180_000,text="重新打开的原付款详情"),bill(id=null),
             screenshot=byteArrayOf(7,8,9)) as IngestResult.Saved
-        assertEquals(RecordState.REVIEW,uncertain.record.state);assertEquals(original.id,uncertain.record.duplicateId)
+        assertEquals(RecordState.POSTED,uncertain.record.state);assertEquals(original.id,uncertain.record.id)
+        assertEquals(1,store.all().size);assertArrayEquals(byteArrayOf(7,8,9),store.historyScreenshot(original.id,3))
         assertEquals(3654L,store.posted(instant,instant+1).sumOf { it.bill.amountCents!! })
         // Equal merchant and amount well after the old transaction may be a real new purchase.
         val newer=store.ingest(capture(at=instant+3_600_000,text="另一笔真实付款"),bill(id=null).copy(occurredAt=instant+3_600_000),
@@ -201,7 +202,7 @@ class RefundPersistenceTest {
         db.execSQL("DROP TABLE records");db.execSQL("ALTER TABLE legacy_records RENAME TO records")
         db.execSQL("DROP TABLE capture_history")
         db.version=6;store.close();store=LedgerStore(context,database,images)
-        assertEquals(8,store.readableDatabase.version);assertEquals(original,store.get(original.id))
+        assertEquals(14,store.readableDatabase.version);assertEquals(original,store.get(original.id))
         assertEquals(1,store.captureHistory(original.id).size);assertArrayEquals(first,store.historyScreenshot(original.id,1))
         assertEquals(1,images.stats().getInt("count"))
     }

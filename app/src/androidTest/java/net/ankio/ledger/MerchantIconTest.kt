@@ -266,9 +266,15 @@ class MerchantIconTest {
             val saved = (store.ingest(Capture(Source.IMAGE, "image", "migration"), parsed, screenshot = image) as IngestResult.Saved).record
             store.writableDatabase.execSQL("DROP TABLE merchant_icons")
             store.writableDatabase.execSQL("DROP TABLE merchant_icon_assets")
-            store.writableDatabase.version = 3
-            store.close(); store = LedgerStore(app, name)
-            assertEquals(8, store.readableDatabase.version)
+            // v3 kept screenshot bytes in capture_images, before the later reference-only layout.
+            store.writableDatabase.apply {
+                execSQL("DROP TABLE capture_images")
+                execSQL("CREATE TABLE capture_images (record_id INTEGER PRIMARY KEY NOT NULL, image BLOB NOT NULL)")
+                execSQL("INSERT INTO capture_images(record_id,image) VALUES (?,?)",arrayOf(saved.id,image))
+            }
+            store.close();LegacyLedgerSchemaFixture.project(app.getDatabasePath(name).path,3)
+            store = LedgerStore(app, name)
+            assertEquals(10, store.readableDatabase.version)
             assertEquals(saved, store.get(saved.id)); assertArrayEquals(image, store.screenshot(saved.id))
             assertTrue(store.merchantIconIds().isEmpty())
         } finally { store.close(); app.deleteDatabase(name); bitmap.recycle() }
@@ -290,10 +296,13 @@ class MerchantIconTest {
                 execSQL("CREATE TABLE merchant_icons (record_id INTEGER PRIMARY KEY NOT NULL, image BLOB NOT NULL)")
                 execSQL("INSERT INTO merchant_icons VALUES (?, ?)", arrayOf(first.id, png))
                 execSQL("INSERT INTO merchant_icons VALUES (?, ?)", arrayOf(second.id, png))
-                version = 4
+                // v4 still used BLOB screenshots; these two fixtures intentionally have none.
+                execSQL("DROP TABLE capture_images")
+                execSQL("CREATE TABLE capture_images (record_id INTEGER PRIMARY KEY NOT NULL, image BLOB NOT NULL)")
             }
-            store.close(); store = LedgerStore(app, name)
-            assertEquals(8, store.readableDatabase.version)
+            store.close();LegacyLedgerSchemaFixture.project(app.getDatabasePath(name).path,4)
+            store = LedgerStore(app, name)
+            assertEquals(10, store.readableDatabase.version)
             assertEquals(first, store.get(first.id)); assertEquals(second, store.get(second.id))
             assertArrayEquals(store.merchantIcon(first.id), store.merchantIcon(second.id))
             assertNotNull(MerchantIconEncoding.mime(store.merchantIcon(first.id)!!))

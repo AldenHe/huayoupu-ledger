@@ -12,6 +12,13 @@
   <link href="app.css" rel="stylesheet"/>
   <link href="permission.css" rel="stylesheet"/>
   <link href="settings-v30.css" rel="stylesheet"/>
+  <link href="monthly-budget.css" rel="stylesheet"/>
+  <link href="bill-labels.css" rel="stylesheet"/>
+  <link href="bill-report.css" rel="stylesheet"/>
+  <link href="ui-pickers.css" rel="stylesheet"/>
+  <link href="ui-scroll.css" rel="stylesheet"/>
+  <link href="account-experience.css" rel="stylesheet"/>
+  <link href="record-experience.css" rel="stylesheet"/>
  </head>
  <body class="native-app">
   <main class="workspace">
@@ -73,6 +80,7 @@
       <div class="trend" id="home-change">
       </div>
      </button>
+    <button type="button" id="monthly-budget" aria-label="设置每月支出限额" onclick="MonthlyBudget.edit()"><span class="budget-label"></span><span class="budget-status"></span><span class="budget-meter" role="progressbar" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" hidden><span class="budget-fill" aria-hidden="true"></span></span></button>
     </section>
     <div class="chart sr-only">
      <div class="plot">
@@ -96,6 +104,7 @@
     </div>
     <div class="totals" hidden="">
     </div>
+
     <div id="entries">
     </div>
     <nav aria-label="主导航" class="bottom-nav">
@@ -208,7 +217,7 @@
       <div class="form-row edit amount-row">
        <label class="sr-only" for="amount">金额</label>
        <div class="amount-field">
-        <span id="amount-sign">¥ -</span>
+        <span id="amount-sign">− ¥</span>
         <input id="amount" min="0.01" placeholder="请输入金额" required="" step="0.01" type="number"/>
        </div>
       </div>
@@ -229,6 +238,8 @@
        </div>
       </div>
      </div>
+     <div class="bill-reimbursement-editor" id="bill-reimbursement-editor"><span>报销</span><div class="reimbursement-segment" role="group" aria-label="是否需要报销"><button id="reimbursement-no" type="button" data-reimbursement="false" aria-pressed="true">不需要</button><button id="reimbursement-yes" type="button" data-reimbursement="true" aria-pressed="false">需要报销</button></div></div>
+     <div class="bill-labels-editor" id="bill-labels-editor"><span>标签</span><button id="bill-labels-button" type="button"><span id="bill-labels-value">添加标签</span><span aria-hidden="true">›</span></button></div>
      <p class="review-reason" hidden="" id="review-reason">
      </p>
      <button id="refund-match" class="refund-match" type="button" hidden="">选择原账单并更新退款</button>
@@ -322,6 +333,7 @@
      </button>
     </section>
     <section class="card account-preferences" aria-label="账户与偏好">
+     <button id="bill-report-entry" type="button" onclick="BillReportUI.open()"><i aria-hidden="true" class="fa-solid fa-receipt"></i><b>账单汇总</b><span class="chevron">›</span></button>
      <button id="backup"><i aria-hidden="true" class="fa-solid fa-folder-open"></i><b>账单与备份</b><span class="chevron">›</span></button>
      <button class="privacy-banner" onclick="privacy()"><i aria-hidden="true" class="fa-solid fa-shield-halved"></i><b>数据与隐私</b><span class="chevron">›</span></button>
     </section>
@@ -388,7 +400,7 @@
        <span>
         ¥
        </span>
-       <input aria-label="金额" id="manual-amount" inputmode="decimal" maxlength="14" placeholder="0.00" type="text"/>
+       <input aria-label="金额" id="manual-amount" inputmode="none" maxlength="14" placeholder="0" type="text"/>
        <button aria-label="清空金额" onclick="clearManualAmount()" type="button">
         ×
        </button>
@@ -485,7 +497,7 @@
       </button>
      </div>
     </header>
-    <div class="segmented" id="stats-type">
+    <div class="stats-controls"><div class="segmented" id="stats-type">
      <button class="active" data-type="expense">
       支出
      </button>
@@ -496,6 +508,7 @@
       全部
      </button>
     </div>
+    <details id="stats-reimbursement" class="stats-reimbursement"><summary aria-label="统计报销筛选"><span id="stats-reimbursement-value">报销：全部</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary><div class="stats-reimbursement-options" role="group" aria-label="统计报销筛选"><button type="button" data-reimbursement="" aria-pressed="true">全部账单<i class="fa-solid fa-check" aria-hidden="true"></i></button><button type="button" data-reimbursement="required" aria-pressed="false">需要报销<i class="fa-solid fa-check" aria-hidden="true"></i></button><button type="button" data-reimbursement="notRequired" aria-pressed="false">不需要报销<i class="fa-solid fa-check" aria-hidden="true"></i></button></div></details></div>
     <section class="card analysis-card">
      <div class="muted" id="analysis-label">
       本月支出总计
@@ -598,9 +611,9 @@
     <section class="asset-card">
      <div class="asset-top">
       <span>
-       总资产（净资产）
+       总资产(CNY)
       </span>
-      <button aria-label="净资产说明" class="muted" onclick="notify('净资产 = 总资产 − 总负债；余额由你手动维护')">
+      <button aria-label="净资产说明" class="muted" onclick="notify('净资产 = 总资产 − 总负债；关联账单自动更新余额，也可手动校正')">
        ⓘ
       </button>
      </div>
@@ -609,6 +622,7 @@
      <div class="asset-breakdown" id="asset-summary">
      </div>
     </section>
+    <section id="account-preferences" aria-label="默认记账扣款偏好"></section>
     <div class="account-heading">
      <span>
       账户管理
@@ -616,7 +630,7 @@
      <span id="account-count">
      </span>
     </div>
-    <p class="asset-maintenance">余额手动更新，与账本收支独立</p>
+    <p class="asset-maintenance">新账单自动更新余额，历史账单不追溯扣款</p>
     <div id="accounts">
     </div>
     <nav aria-label="主导航" class="bottom-nav">
@@ -656,6 +670,7 @@
      </button>
     </nav>
    </section>
+   <section aria-label="账户详情" class="screen app screen-account-detail" id="account-detail"></section>
   </main>
   <div hidden="" id="record-shade">
   </div>
@@ -683,6 +698,12 @@
   <section hidden id="manual-panel" role="dialog" aria-modal="true" aria-label="手动记账" tabindex="-1"><div class="manual-panel-content"></div></section>
   <script src="fluid-motion.js"></script>
   <script src="panel-focus.js"></script>
+  <script src="monthly-budget.js"></script>
+   <script src="bill-labels.js"></script>
+   <script src="bill-report.js"></script>
+   <script src="ui-scroll.js"></script>
+   <script src="account-experience.js"></script>
+   <script src="record-experience.js"></script>
    <script src="app.js">
   </script>
   <script src="permission.js"></script>

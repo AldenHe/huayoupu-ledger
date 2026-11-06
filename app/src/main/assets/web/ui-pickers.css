@@ -1,0 +1,8 @@
+/* Host fields stay white; Android owns the actual picker/dialog interaction. */
+.native-picker-sheet .month-input,#account-kind,#account-bank,#account-type{color-scheme:light;background:#fff;color:#303537;accent-color:#50585c}
+.native-picker-sheet .month-input:focus{outline:2px solid #50585c;outline-offset:2px}
+#account-kind:focus,#account-bank:focus,#account-type:focus{border-color:#50585c}
+.native-picker-sheet .sheet-actions button{background:#fff;color:#303537;border:1px solid #cbd0d3}
+.native-picker-sheet .sheet-actions button.primary{border-color:#50585c;font-weight:600}
+.export-format{gap:0}.export-format.is-selected{background:#e6f5ef}.export-format input{appearance:none;-webkit-appearance:none;border:1.5px solid #6f8a7e;border-radius:50%;background:#fff;position:relative;margin:0 12px 0 0}
+.export-format input:checked{border-color:#286c48}.export-format input:checked::after{content:"";position:absolute;top:4px;right:4px;bottom:4px;left:4px;background:#286c48;border-radius:50%}

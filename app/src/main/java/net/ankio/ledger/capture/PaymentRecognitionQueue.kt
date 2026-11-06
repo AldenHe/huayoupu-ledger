@@ -72,7 +72,7 @@ class PaymentRecognitionQueue(private val app:LedgerApp,
                 record==null || result is IngestResult.Saved && result.record.id!=linked -> "账单已移除，未新增记账"
                 record.state==net.ankio.ledger.core.RecordState.REVIEW -> "金额待核对，请打开账单"
                 record.state!=net.ankio.ledger.core.RecordState.POSTED || record.bill.amountCents==null -> "账单未入账，请重试"
-                else -> "已记账 ¥${net.ankio.ledger.core.Money.format(record.bill.amountCents!!)}"
+                else -> "已记账 ¥${net.ankio.ledger.core.Money.display(record.bill.amountCents!!)}"
             }
         }
         IngestResult.Ignored -> "未识别到金额，请重试"

@@ -39,12 +39,14 @@ class ImageImportTest {
     @Test fun imageUriDecodesSendsOnlyOneImageAndPersistsParsedBillLocally() = runBlocking {
         val file = fixture(); val before = app.store.all().map { it.uid }.toSet()
         var calls = 0
+        var submitted: ByteArray? = null
         val importer = ImageImporter(app,OcrClient(app,SyntheticRecognitionBackend { _,path,payload,guard ->
             assertTrue(guard()); assertEquals("chat/completions",path); calls++
             assertEquals(1,payload!!.getJSONArray("messages").length())
             val content = payload.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
             assertEquals(2,content.length()); assertEquals("image_url",content.getJSONObject(1).getString("type"))
             assertTrue(content.getJSONObject(1).getJSONObject("image_url").getString("url").startsWith("data:image/jpeg;base64,"))
+            submitted = android.util.Base64.decode(content.getJSONObject(1).getJSONObject("image_url").getString("url").substringAfter(','), android.util.Base64.DEFAULT)
             assertFalse(payload.has("records")); response()
         }))
         try {
@@ -54,6 +56,8 @@ class ImageImportTest {
             val result = (state as ImageImportState.Finished).result as IngestResult.Saved
             assertEquals(2850L,app.store.get(result.record.id)!!.bill.amountCents)
             assertTrue(importer.previewBytes!!.isNotEmpty()); assertEquals(1,calls)
+            assertArrayEquals(submitted, importer.previewBytes)
+            assertArrayEquals(submitted, app.store.screenshot(result.record.id))
         } finally {
             importer.cancel(); app.store.all().filter { it.uid !in before }.forEach { app.store.delete(it.id) }
             app.recognitionSession.invalidate(); file.delete()

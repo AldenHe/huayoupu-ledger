@@ -1,0 +1,36 @@
+<resources>
+    <!-- Native chooser surfaces use these roles; the HTML page palette stays unchanged. -->
+    <color name="native_control_surface">#FFFFFF</color>
+    <color name="native_control_ink">#303537</color>
+    <color name="native_control_secondary">#626A6F</color>
+    <color name="native_control_accent">#50585C</color>
+    <style name="NativeControlsTheme" parent="AppTheme">
+        <item name="android:colorAccent">@color/native_control_accent</item>
+        <item name="android:colorControlActivated">@color/native_control_accent</item>
+        <item name="android:alertDialogTheme">@style/NativeControlsDialog</item>
+        <item name="android:datePickerDialogTheme">@style/NativeControlsDialog</item>
+        <item name="android:timePickerDialogTheme">@style/NativeControlsDialog</item>
+    </style>
+    <style name="NativeControlsDialog" parent="NativeControlsDialogBase"/>
+    <style name="NativeControlsDialogBase" parent="android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:datePickerStyle">@style/NativeControlsDatePicker</item>
+        <item name="android:colorAccent">@color/native_control_accent</item>
+        <item name="android:colorControlActivated">@color/native_control_accent</item>
+        <item name="android:colorBackground">@color/native_control_surface</item>
+        <item name="android:textColorPrimary">@color/native_control_ink</item>
+        <item name="android:textColorSecondary">@color/native_control_secondary</item>
+        <item name="android:windowBackground">@drawable/native_control_dialog</item>
+        <item name="android:buttonBarPositiveButtonStyle">@style/NativeControlsButton</item>
+        <item name="android:buttonBarNegativeButtonStyle">@style/NativeControlsButton</item>
+        <item name="android:buttonBarNeutralButtonStyle">@style/NativeControlsButton</item>
+    </style>
+    <style name="NativeControlsDatePicker" parent="android:style/Widget.Material.DatePicker">
+        <item name="android:datePickerMode">spinner</item>
+        <item name="android:calendarViewShown">false</item>
+    </style>
+    <style name="NativeControlsButton" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:textColor">@color/native_control_ink</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+</resources>
